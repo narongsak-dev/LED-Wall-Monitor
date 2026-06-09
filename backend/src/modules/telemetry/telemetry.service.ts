@@ -417,6 +417,15 @@ export class TelemetryService {
           bucket: '1 minute',
           source: 'telemetry',
         };
+      case TimeRangeDto.TODAY:
+        // From midnight local time (Asia/Bangkok) to now. Hour bucket gives
+        // 24 points max — a clean "energy by hour today" view.
+        return {
+          from: this.startOfLocalDay(now),
+          to: now,
+          bucket: '1 hour',
+          source: 'telemetry_hourly',
+        };
       case TimeRangeDto.H24:
         return {
           from: new Date(now.getTime() - 24 * 60 * 60 * 1000),

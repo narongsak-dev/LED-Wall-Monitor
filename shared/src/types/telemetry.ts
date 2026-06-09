@@ -8,6 +8,7 @@ export type MetricType =
 
 export type TimeRange =
   | 'realtime'
+  | 'today'      // current calendar day (Asia/Bangkok)
   | '24h'
   | '7d'
   | 'month'      // rolling 30 days

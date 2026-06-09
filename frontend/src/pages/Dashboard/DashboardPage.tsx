@@ -1080,7 +1080,7 @@ function AlertPanel(props: {
 // ─── 4d. Quick Actions ─────────────────────────────────────────
 function QuickActions(props: { navigate: ReturnType<typeof useNavigate>; siteId: number }) {
   const items = [
-    { label: 'รายงาน', icon: <FileText size={15} />, to: `/site/${props.siteId}/report` },
+    { label: 'รายงาน', icon: <FileText size={15} />, to: `/sites/${props.siteId}/reports` },
     { label: 'จัดการ Board', icon: <Cpu size={15} />, to: '/admin/devices' },
     { label: 'จัดการ Site', icon: <Settings size={15} />, to: '/admin/sites' },
   ];

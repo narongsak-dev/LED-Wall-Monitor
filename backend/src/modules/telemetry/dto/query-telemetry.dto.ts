@@ -10,6 +10,7 @@ import {
 
 export enum TimeRangeDto {
   REALTIME = 'realtime',
+  TODAY = 'today',       // current calendar day (Asia/Bangkok)
   H24 = '24h',
   D7 = '7d',
   MONTH = 'month',       // rolling 30 days

@@ -217,8 +217,9 @@ export function DevicesManagementPage() {
           />
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <ModalPicker
+            compact
             label="ไซต์"
             options={sites.map((s) => ({
               value: s.id,
@@ -237,6 +238,7 @@ export function DevicesManagementPage() {
               Hidden otherwise so the user isn't picking zones across sites. */}
           {filterSite !== 'all' && zones.length > 0 && (
             <ModalPicker
+              compact
               label="โซน"
               options={zones.map((z) => ({
                 value: z.id,

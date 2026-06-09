@@ -24,6 +24,12 @@ export interface ModalPickerProps<V extends string | number> {
 
   disabled?: boolean;
   minWidth?: number;
+
+  /** Hide the uppercase label above the trigger. Use this in filter bars
+   *  where the trigger sits inline with unlabelled buttons (search /
+   *  primary actions) — the label otherwise puts the trigger ~20 px lower
+   *  than its neighbours. The label still appears inside the modal title. */
+  compact?: boolean;
 }
 
 /**
@@ -51,6 +57,7 @@ export function ModalPicker<V extends string | number>(
     emptyLabel = 'ไม่มีรายการ',
     disabled = false,
     minWidth = 180,
+    compact = false,
   } = props;
 
   const [open, setOpen] = useState(false);
@@ -81,20 +88,26 @@ export function ModalPicker<V extends string | number>(
     );
   }, [options, query]);
 
+  // Compact mode (used in filter bars) lifts the trigger height to match
+  // the unlabelled neighbours by widening padding to 9px. The non-compact
+  // mode keeps 8px because it has the label above eating the spacing.
+  const triggerPad = compact ? '9px 12px' : '8px 12px';
+
   return (
     <div>
-      <label style={pickerLabelStyle}>{label}</label>
+      {!compact && <label style={pickerLabelStyle}>{label}</label>}
       <button
         type="button"
         onClick={() => showModalMode && !disabled && setOpen(true)}
         disabled={isEmpty || disabled || isForcedOne}
         style={{
-          background: 'var(--bg-input)',
+          background: compact ? 'var(--bg-card)' : 'var(--bg-input)',
           border: '1px solid var(--border-color)',
           color: isEmpty ? 'var(--dim2)' : 'var(--text)',
-          padding: '8px 12px',
+          padding: triggerPad,
           paddingRight: showModalMode ? 32 : 12,
-          borderRadius: 8, fontSize: 13,
+          borderRadius: 8,
+          fontSize: compact ? 14 : 13,
           fontFamily: 'inherit',
           cursor: isEmpty || disabled || isForcedOne ? 'default' : 'pointer',
           minWidth,

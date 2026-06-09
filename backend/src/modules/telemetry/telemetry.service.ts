@@ -203,16 +203,43 @@ export class TelemetryService {
       bounds.from,
       bounds.to,
     );
-    return rows.map((r) => ({
-      time: r.bucket.toISOString(),
-      siteId: query.siteId,
-      voltage: r.voltage,
-      current: r.current,
-      power: r.power,
-      energy: r.energy,
-      temperature: r.temperature,
-      humidity: r.humidity,
-    }));
+
+    // Gap-fill: the chart needs every expected bucket present so the
+    // x-axis is continuous. SQL only returns buckets that had at least one
+    // row, so we stitch together the full sequence here and use `null` for
+    // gaps. The frontend uses `null` (not `0`) to render an explicit "no
+    // data" marker — preserving the distinction between "we measured zero"
+    // and "we have no measurement".
+    const byBucket = new Map<number, typeof rows[number]>();
+    for (const r of rows) byBucket.set(r.bucket.getTime(), r);
+
+    const bucketMs = bounds.bucket === '1 minute' ? 60_000
+                   : bounds.bucket === '1 hour'   ? 3_600_000
+                   : 86_400_000;
+    // Align the first bucket DOWN to the same boundary that time_bucket()
+    // produces, so the fill timestamps exactly match the SQL ones.
+    const start = Math.floor(bounds.from.getTime() / bucketMs) * bucketMs;
+    const end   = bounds.to.getTime();
+
+    const out: Array<{
+      time: string; siteId: number;
+      voltage: number | null; current: number | null; power: number | null;
+      energy: number | null; temperature: number | null; humidity: number | null;
+    }> = [];
+    for (let ts = start; ts < end; ts += bucketMs) {
+      const r = byBucket.get(ts);
+      out.push({
+        time: new Date(ts).toISOString(),
+        siteId: query.siteId,
+        voltage:     r ? r.voltage     : null,
+        current:     r ? r.current     : null,
+        power:       r ? r.power       : null,
+        energy:      r ? r.energy      : null,
+        temperature: r ? r.temperature : null,
+        humidity:    r ? r.humidity    : null,
+      });
+    }
+    return out;
   }
 
   async summary(query: QueryTelemetryDto) {

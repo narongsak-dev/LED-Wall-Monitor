@@ -277,9 +277,12 @@ export function DataReportPage() {
         case 'month':  return 24 * 30;
       }
     })();
+    // Preserve null for missing buckets so ECharts skips the bar entirely
+    // (a missing bar reads as "no data"; a 0-height bar reads as "measured
+    // 0 kWh" — completely different meanings).
     const data = series.map((p) => {
-      const watts = p.power ?? 0;
-      return Number(((watts * bucketHours) / 1000).toFixed(4)); // kWh
+      if (p.power == null) return null;
+      return Number(((p.power * bucketHours) / 1000).toFixed(4)); // kWh
     });
     return {
       grid: { left: 50, right: 16, top: 14, bottom: 32 },
@@ -288,6 +291,11 @@ export function DataReportPage() {
         backgroundColor: ct.tooltipBg,
         borderColor: ct.tooltipBorder,
         textStyle: { color: ct.tooltipText },
+        formatter: (params: Array<{ axisValue: string; data: number | null }>) => {
+          const p = params[0];
+          const v = p.data;
+          return `${p.axisValue}<br/>${v == null ? '<span style="color:#94a3b8">ไม่มีข้อมูล</span>' : `${v.toFixed(4)} kWh`}`;
+        },
       },
       xAxis: {
         type: 'category', data: xLabels,
@@ -344,6 +352,12 @@ export function DataReportPage() {
         backgroundColor: ct.tooltipBg,
         borderColor: ct.tooltipBorder,
         textStyle: { color: ct.tooltipText },
+        formatter: (params: Array<{ axisValue: string; data: number | null; seriesName: string }>) => {
+          const p = params[0];
+          return `${p.axisValue}<br/>${p.data == null
+            ? '<span style="color:#94a3b8">ไม่มีข้อมูล</span>'
+            : `${meta.label} ${Number(p.data).toFixed(2)} ${meta.unit}`}`;
+        },
       },
       xAxis: {
         type: 'category',
@@ -369,6 +383,40 @@ export function DataReportPage() {
   }, [series, metric, metricMeta, range, customDays, ct]);
 
   // ─── CSV export ────────────────────────────────────────────────
+  // Grouped CSV: one row per bucket in the active range, including buckets
+  // with no measurements (value = empty). Useful when the user wants to
+  // graph the report data externally without losing the time axis.
+  const handleExportGroupedCsv = () => {
+    if (series.length === 0) return;
+    const bucketHours = (() => {
+      switch (bucketKind(range, customDays)) {
+        case 'minute': return 1 / 60;
+        case 'hour':   return 1;
+        case 'day':    return 24;
+        case 'month':  return 24 * 30;
+      }
+    })();
+    exportToCsv(
+      series.map((p) => ({
+        time: dayjs(p.time).format('YYYY-MM-DD HH:mm'),
+        voltage: p.voltage,
+        current: p.current,
+        power: p.power,
+        energy_kwh: p.power == null ? null : Number(((p.power * bucketHours) / 1000).toFixed(4)),
+        temperature: p.temperature,
+      })),
+      [
+        { key: 'time',        label: 'Time' },
+        { key: 'voltage',     label: 'Voltage avg (V)' },
+        { key: 'current',     label: 'Current avg (A)' },
+        { key: 'power',       label: 'Power avg (W)' },
+        { key: 'energy_kwh',  label: 'Energy bucket (kWh)' },
+        { key: 'temperature', label: 'Temperature avg (°C)' },
+      ],
+      `report-grouped-site${id}-${range}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`,
+    );
+  };
+
   const handleExportCsv = async () => {
     if (!query) return;
     const all = await fetchTelemetryReport({ ...query, page: 1, pageSize: 100_000 });
@@ -422,6 +470,7 @@ export function DataReportPage() {
         sensors={sensorsInScope} sensorId={sensorId} setSensorId={setSensorId}
         kind={kind} setKind={setKind}
         onExport={handleExportCsv}
+        onExportGrouped={handleExportGroupedCsv}
         actualRange={summary?.range}
       />
 
@@ -585,12 +634,13 @@ function FilterBar(props: {
   sensorId: number | 'all'; setSensorId: (v: number | 'all') => void;
   kind: SensorKind | 'all'; setKind: (v: SensorKind | 'all') => void;
   onExport: () => void;
+  onExportGrouped: () => void;
   actualRange?: { from: string; to: string };
 }) {
   const { range, setRange, from, setFrom, to, setTo,
           zones, zoneId, setZoneId, boards, boardId, setBoardId,
           sensors, sensorId, setSensorId,
-          kind, setKind, onExport, actualRange } = props;
+          kind, setKind, onExport, onExportGrouped, actualRange } = props;
 
   return (
     <div
@@ -672,20 +722,36 @@ function FilterBar(props: {
           </>
         )}
 
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button
-            onClick={onExport}
+            onClick={onExportGrouped}
+            title="ส่งออกข้อมูลที่ group ตามช่วงเวลา (ครบทุก bucket รวมช่วงที่ไม่มีข้อมูล)"
             style={{
               background: 'var(--bg-input)',
               border: '1px solid var(--border-color)',
               color: 'var(--text)',
-              padding: '9px 16px', borderRadius: 8,
-              fontSize: 13, fontWeight: 600,
+              padding: '9px 14px', borderRadius: 8,
+              fontSize: 12.5, fontWeight: 600,
               cursor: 'pointer', fontFamily: 'inherit',
-              display: 'inline-flex', alignItems: 'center', gap: 8,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
             }}
           >
-            <Download size={14} /> ดาวน์โหลด CSV
+            <Download size={13} /> CSV (กราฟ)
+          </button>
+          <button
+            onClick={onExport}
+            title="ส่งออกข้อมูลดิบทุก record"
+            style={{
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text)',
+              padding: '9px 14px', borderRadius: 8,
+              fontSize: 12.5, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <Download size={13} /> CSV (Raw)
           </button>
         </div>
       </div>

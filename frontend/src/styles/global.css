@@ -1,0 +1,442 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700;800&display=swap');
+
+:root,
+[data-theme='dark'] {
+  /* Surfaces */
+  --bg-body: #0a0e1a;
+  --bg-card: #111729;
+  --bg-elevated: #182032;
+  --bg-input: #0d1426;
+  --bg-glass: rgba(17, 23, 41, 0.6);
+
+  /* Borders (subtle, semi-transparent slate) */
+  --border-color: rgba(148, 163, 184, 0.1);
+  --border-hover: rgba(148, 163, 184, 0.2);
+  --border-strong: rgba(148, 163, 184, 0.18);
+
+  /* Accent */
+  --cyan: #06b6d4;
+  --cyan-bright: #22d3ee;
+  --cyan-dark: #0891b2;
+  --cyan-glow: rgba(6, 182, 212, 0.15);
+  --cyan-glow-strong: rgba(6, 182, 212, 0.25);
+
+  --yellow: #facc15;
+  --green: #22c55e;
+  --red: #ef4444;
+  --purple: #a78bfa;
+  --pink: #ec4899;
+
+  /* Text */
+  --text: #f1f5f9;
+  --dim: #94a3b8;
+  --dim2: #64748b;
+
+  /* Chart */
+  --th-bg: rgba(6, 182, 212, 0.05);
+  --hover-bg: rgba(148, 163, 184, 0.04);
+  --chart-axis: rgba(148, 163, 184, 0.15);
+  --chart-label: #94a3b8;
+  --chart-grid: rgba(148, 163, 184, 0.08);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 0 1px rgba(6, 182, 212, 0.18), 0 8px 32px rgba(6, 182, 212, 0.12);
+
+  --login-bg: radial-gradient(ellipse at 50% 0%, rgba(6, 182, 212, 0.08), transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(167, 139, 250, 0.05), transparent 50%), #0a0e1a;
+  --sidebar-bg: linear-gradient(180deg, #111729 0%, #0e1424 100%);
+  --card-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0));
+}
+
+[data-theme='light'] {
+  /* Surfaces — body อ่อนแต่ยังมี tint ให้แยกจาก card */
+  --bg-body: #eef0f4;
+  --bg-card: #ffffff;
+  --bg-elevated: #f8f9fb;
+  --bg-input: #f3f5f8;
+  --bg-glass: rgba(255, 255, 255, 0.8);
+
+  /* Borders — visible พอให้ขอบการ์ดชัด */
+  --border-color: rgba(15, 23, 42, 0.09);
+  --border-hover: rgba(15, 23, 42, 0.14);
+  --border-strong: rgba(15, 23, 42, 0.12);
+
+  /* Accent — desaturate ไม่จี๊ด */
+  --cyan: #0e7490;
+  --cyan-bright: #0891b2;
+  --cyan-dark: #155e75;
+  --cyan-glow: rgba(14, 116, 144, 0.08);
+  --cyan-glow-strong: rgba(14, 116, 144, 0.16);
+
+  --yellow: #b45309;
+  --green: #15803d;
+  --red: #b91c1c;
+  --purple: #6d28d9;
+  --pink: #be185d;
+
+  /* Text — slate-800 ไม่ใช่ slate-950 (ตาไม่ล้า) */
+  --text: #1e293b;
+  --dim: #64748b;
+  --dim2: #94a3b8;
+
+  --th-bg: rgba(14, 116, 144, 0.05);
+  --hover-bg: rgba(15, 23, 42, 0.03);
+  --chart-axis: rgba(15, 23, 42, 0.08);
+  --chart-label: #64748b;
+  --chart-grid: rgba(15, 23, 42, 0.05);
+
+  /* Shadows — มี elevation ชัดหน่อย แต่ soft */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.09);
+  --shadow-glow: 0 0 0 1px rgba(14, 116, 144, 0.15), 0 8px 24px rgba(14, 116, 144, 0.1);
+
+  --login-bg: radial-gradient(ellipse at 50% 0%, rgba(14, 116, 144, 0.07), transparent 60%),
+    radial-gradient(ellipse at 80% 80%, rgba(109, 40, 217, 0.05), transparent 50%), #eef0f4;
+  --sidebar-bg: linear-gradient(180deg, #ffffff 0%, #f6f7fa 100%);
+  --card-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(15, 23, 42, 0.008));
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Sarabun', 'Inter', system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-body);
+  color: var(--text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.65; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Utilities ─────────────────────────────────────────────── */
+.fade-in {
+  animation: fadeIn 0.3s ease;
+}
+.fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pulse-dot {
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+
+.breadcrumb {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 6px;
+  font-weight: 500;
+}
+.breadcrumb span {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.page-title {
+  color: var(--text);
+  font-size: 24px;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  background-image: var(--card-gradient);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+/* ── Badge ────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+[data-theme='dark'] .badge-online, :root .badge-online {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--green);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+[data-theme='dark'] .badge-offline, :root .badge-offline {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--red);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+[data-theme='dark'] .badge-warning, :root .badge-warning {
+  background: rgba(250, 204, 21, 0.12);
+  color: var(--yellow);
+  border: 1px solid rgba(250, 204, 21, 0.25);
+}
+
+[data-theme='light'] .badge-online {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--green);
+  border: 1px solid rgba(22, 163, 74, 0.25);
+}
+[data-theme='light'] .badge-offline {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--red);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+}
+[data-theme='light'] .badge-warning {
+  background: rgba(217, 119, 6, 0.1);
+  color: var(--yellow);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--cyan-glow);
+  border: 1px solid rgba(6, 182, 212, 0.22);
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* ── Ant Design tweaks ────────────────────────────────────── */
+.ant-table-wrapper .ant-table {
+  background: transparent;
+}
+.ant-table-thead > tr > th {
+  background: var(--th-bg) !important;
+  color: var(--dim) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.ant-table-tbody > tr:hover > td {
+  background: var(--hover-bg) !important;
+}
+.ant-pagination-item {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+}
+.ant-pagination-item a {
+  color: var(--text) !important;
+}
+.ant-pagination-item-active {
+  background: var(--cyan) !important;
+  border-color: var(--cyan) !important;
+}
+.ant-pagination-item-active a {
+  color: #fff !important;
+  font-weight: 700;
+}
+
+/* ── Selection ────────────────────────────────────────────── */
+::selection {
+  background: var(--cyan-glow-strong);
+  color: var(--text);
+}
+
+/* ── Focus rings ──────────────────────────────────────────── */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--cyan) !important;
+  box-shadow: 0 0 0 3px var(--cyan-glow);
+}
+
+/* ── Responsive (mobile/tablet) ──────────────────────────── */
+.mobile-only { display: none; }
+.mobile-menu-btn {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+.mobile-menu-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 998;
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 900px) {
+  .mobile-only { display: inline-flex; }
+  .mobile-menu-btn { display: inline-flex; }
+
+  /* Sidebar becomes a drawer */
+  .app-sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    height: 100vh !important;
+    z-index: 999;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: var(--shadow-lg);
+  }
+  .app-sidebar.open {
+    transform: translateX(0);
+  }
+  .mobile-menu-backdrop.open {
+    display: block;
+  }
+
+  /* Main content — full width, smaller padding */
+  .app-main {
+    padding: 14px !important;
+  }
+
+  /* Grids that use repeat(N, 1fr) → single column or 2-col */
+  .responsive-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .responsive-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+  .responsive-flex-wrap {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .page-title {
+    font-size: 18px !important;
+  }
+
+  /* Tables already overflow-x — keep them scrollable */
+  table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 560px) {
+  .responsive-grid-4 {
+    grid-template-columns: 1fr !important;
+  }
+  /* Hide breadcrumb on tiny screens */
+  .breadcrumb {
+    display: none;
+  }
+}
+
+/* ── Responsive helpers used by inline styles ─────────────── */
+/* Tables: parent should already have overflow-x:auto. Add a soft shadow
+   hint on the right edge to suggest scrollability on small screens. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Modals: clamp width so the 28px padding always fits on tiny phones */
+.modal-card {
+  width: 100%;
+  max-width: min(640px, 95vw);
+}
+
+/* Toolbar row: allow children to wrap and re-flow on small screens */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.toolbar-row > * {
+  min-width: 0;
+}
+
+/* Hide the inline clock + connection badge on phones — they cost a row
+   of vertical space without giving meaningful info on a small screen */
+@media (max-width: 640px) {
+  .page-header-clock,
+  .page-header-connection {
+    display: none !important;
+  }
+}

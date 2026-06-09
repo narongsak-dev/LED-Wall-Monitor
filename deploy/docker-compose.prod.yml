@@ -1,0 +1,161 @@
+# Production docker-compose for LED Wall Monitor.
+#
+# Designed to coexist with other workloads on the host:
+#   - Postgres / Redis / EMQX internal services have NO host port mappings —
+#     they're reachable only on the internal `monitor-net` Docker network.
+#   - The web frontend + backend bind to 127.0.0.1 on non-default ports
+#     (8081, 3001). Front them with the host's existing nginx (see
+#     deploy/nginx-monitor.conf) or change the bind for direct LAN access.
+#   - MQTT (1883/8883) is published on 0.0.0.0 because boards on the LAN /
+#     internet need to reach it directly.
+#
+# Run from the deploy/ folder with `--project-name ledmonitor` to keep all
+# container, network, and volume names neatly namespaced:
+#
+#   cd deploy
+#   cp .env.example .env && vim .env       # fill in passwords, domain
+#   docker compose -p ledmonitor -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: ledmonitor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-monitor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-monitor}
+    # NOTE: no `ports:` — postgres is reachable only inside monitor-net.
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks: [monitor-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-monitor} -d ${POSTGRES_DB:-monitor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  redis:
+    image: redis:7-alpine
+    container_name: ledmonitor-redis
+    restart: unless-stopped
+    # No host port — internal only.
+    volumes:
+      - ./data/redis:/data
+    networks: [monitor-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  emqx:
+    image: emqx/emqx:5.8
+    container_name: ledmonitor-emqx
+    restart: unless-stopped
+    environment:
+      EMQX_NAME: ledmonitor-emqx
+      EMQX_HOST: 127.0.0.1
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:?must be set}
+    ports:
+      # MQTT publicly exposed so devices on the LAN / internet can connect.
+      - "${EMQX_MQTT_PORT:-1883}:1883"
+      - "${EMQX_MQTT_TLS_PORT:-8883}:8883"
+      # Dashboard bound to loopback — admin only via SSH tunnel or via the
+      # host nginx reverse proxy.
+      - "127.0.0.1:${EMQX_DASHBOARD_PORT:-18083}:18083"
+    volumes:
+      - ./data/emqx:/opt/emqx/data
+      - ./data/emqx-log:/opt/emqx/log
+    networks: [monitor-net]
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: ledmonitor-backend:latest
+    container_name: ledmonitor-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-monitor}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-monitor}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MQTT_URL: ${MQTT_URL:-mqtt://emqx:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-sites}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?must be set}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?must be set}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      # Firmware images uploaded through the admin UI live here. Mounted from
+      # the host so they survive container rebuilds. Boards stream from
+      # `GET /api/firmware/download/:version` which reads out of this dir.
+      FIRMWARE_UPLOAD_DIR: /app/firmware-uploads
+    ports:
+      # Loopback only — the host nginx (or the frontend container) is the
+      # public face. Switch to "0.0.0.0:3001:3000" for direct LAN testing.
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3001}:3000"
+    volumes:
+      - ./data/firmware-uploads:/app/firmware-uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      emqx:
+        condition: service_started
+    networks: [monitor-net]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      args:
+        # The SPA needs to know where to find /api at runtime. Default to
+        # empty → axios uses same-origin relative URLs, which works behind
+        # the container's nginx proxy and the host's nginx alike. Override
+        # if the API lives on a different domain.
+        VITE_API_URL: ${VITE_API_URL:-}
+    image: ledmonitor-frontend:latest
+    container_name: ledmonitor-frontend
+    restart: unless-stopped
+    ports:
+      # Bind 0.0.0.0 by default so the LAN can hit the dashboard directly
+      # while we don't have an upstream host nginx in front. Change to
+      # 127.0.0.1 once a reverse proxy fronts it.
+      - "0.0.0.0:${FRONTEND_HOST_PORT:-8081}:80"
+    depends_on:
+      - backend
+    networks: [monitor-net]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+networks:
+  monitor-net:
+    driver: bridge

@@ -1,0 +1,275 @@
+generator client {
+  provider      = "prisma-client-js"
+  // "native" supports the host the developer runs on (Windows/macOS/Linux);
+  // "linux-musl-openssl-3.0.x" is what the alpine-based runtime container
+  // needs, since node:20-alpine ships OpenSSL 3.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  super_admin     // central platform admin — manages everything
+  site_admin     // owns/manages one or more sites
+  viewer         // read-only access to assigned sites
+}
+
+enum SitePermission {
+  read
+  write
+  admin
+}
+
+enum SensorType {
+  power_meter
+  temperature
+  humidity
+  gateway
+  other
+}
+
+model User {
+  id            BigInt    @id @default(autoincrement())
+  username      String    @unique @db.VarChar(50)
+  email         String?   @unique @db.VarChar(120)
+  phoneNumber   String?   @map("phone_number") @db.VarChar(30)
+  passwordHash  String    @map("password_hash") @db.VarChar(255)
+  fullName      String?   @map("full_name") @db.VarChar(120)
+  role          UserRole  @default(viewer)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  userSites     UserSite[]
+  loginLogs     LoginLog[]
+  resetRequests       PasswordResetRequest[] @relation("ResetRequester")
+  resetApprovals      PasswordResetRequest[] @relation("ResetApprover")
+
+  @@map("users")
+}
+
+enum PasswordResetStatus {
+  pending
+  approved
+  rejected
+  used
+  expired
+}
+
+/// Forgot-password approval chain. A user submits a request; an approver of
+/// the appropriate role (viewer → site_admin, site_admin → super_admin,
+/// super_admin → another super_admin) sees it in their approval inbox.
+/// On approval the system mints a single-use 6-digit code (bcrypt-hashed
+/// here) and shows it to the approver once — they hand it to the requester
+/// out-of-band. The requester then redeems it to set a new password.
+model PasswordResetRequest {
+  id              BigInt              @id @default(autoincrement())
+  userId          BigInt              @map("user_id")
+  requestedAt     DateTime            @default(now()) @map("requested_at") @db.Timestamptz
+  status          PasswordResetStatus @default(pending)
+  /// What was provided as the secondary identity check — phone number or email.
+  /// Stored verbatim so admins can verify the request looks legit.
+  providedContact String              @map("provided_contact") @db.VarChar(120)
+  ipAddress       String?             @map("ip_address") @db.VarChar(45)
+  userAgent       String?             @map("user_agent") @db.Text
+
+  approverId      BigInt?             @map("approver_id")
+  approvedAt      DateTime?           @map("approved_at") @db.Timestamptz
+  codeHash        String?             @map("code_hash") @db.VarChar(255)
+  codeExpiresAt   DateTime?           @map("code_expires_at") @db.Timestamptz
+  rejectedReason  String?             @map("rejected_reason") @db.VarChar(500)
+  usedAt          DateTime?           @map("used_at") @db.Timestamptz
+
+  user      User  @relation("ResetRequester", fields: [userId], references: [id], onDelete: Cascade)
+  approver  User? @relation("ResetApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([userId, requestedAt(sort: Desc)])
+  @@index([status, requestedAt(sort: Desc)])
+  @@map("password_reset_requests")
+}
+
+/// Audit trail of login attempts (both successful and failed). Used by the
+/// "ประวัติการเข้าใช้งานระบบ" page. userId is nullable so failed attempts with
+/// an unknown username are still recorded (we keep the typed username).
+model LoginLog {
+  id         BigInt   @id @default(autoincrement())
+  userId     BigInt?  @map("user_id")
+  username   String   @db.VarChar(50)
+  success    Boolean  @default(true)
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("login_logs")
+}
+
+/// Group lets a super_admin cluster related sites together (e.g. by region,
+/// customer, business unit). Sites can exist without a group — groupId is
+/// nullable. Only super_admins create/edit groups.
+model Group {
+  id          BigInt    @id @default(autoincrement())
+  code        String    @unique @db.VarChar(50)
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  sites       Site[]
+
+  @@map("groups")
+}
+
+model Site {
+  id          BigInt    @id @default(autoincrement())
+  groupId     BigInt?   @map("group_id")
+  code        String    @unique @db.VarChar(50)
+  name        String    @db.VarChar(200)
+  location    String?   @db.VarChar(255)
+  timezone    String    @default("Asia/Bangkok") @db.VarChar(50)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  group       Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  boards      Board[]
+  sensors     Sensor[]
+  zones       Zone[]
+  userSites   UserSite[]
+
+  @@index([groupId])
+  @@map("sites")
+}
+
+/// A Zone is a physical sub-area of a Site (e.g. "Floor 2", "Hall A").
+/// Boards can optionally be tagged with a Zone so the UI can group sensors
+/// by location inside a site.
+model Zone {
+  id          BigInt    @id @default(autoincrement())
+  siteId      BigInt    @map("site_id")
+  code        String    @db.VarChar(50)
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  site        Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  boards      Board[]
+
+  @@unique([siteId, code])
+  @@index([siteId])
+  @@map("zones")
+}
+
+model UserSite {
+  userId      BigInt        @map("user_id")
+  siteId      BigInt        @map("site_id")
+  permission  SitePermission @default(read)
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site        Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@id([userId, siteId])
+  @@map("user_sites")
+}
+
+/// A physical controller (ESP32 / gateway / etc.) that connects to WiFi and
+/// publishes MQTT on behalf of one or more Sensors connected to it.
+model Board {
+  id           BigInt    @id @default(autoincrement())
+  siteId       BigInt    @map("site_id")
+  zoneId       BigInt?   @map("zone_id")
+  code         String    @unique @db.VarChar(50)   // e.g. BOARD-001
+  name         String?   @db.VarChar(200)
+  hardware     String?   @db.VarChar(100)          // e.g. "HKL-EA8 (ESP32)"
+  firmware     String?   @db.VarChar(50)           // e.g. "v1.0.0"
+  macAddress   String?   @unique @map("mac_address") @db.VarChar(20)
+  ipAddress    String?   @map("ip_address") @db.VarChar(45)
+  lastSeenAt   DateTime? @map("last_seen_at") @db.Timestamptz
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  site         Site      @relation(fields: [siteId], references: [id])
+  zone         Zone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  sensors      Sensor[]
+
+  @@index([siteId])
+  @@index([zoneId])
+  @@map("boards")
+}
+
+/// A measurement source attached to a Board (PZEM, KWS, etc.).
+/// The Board reads from it and publishes its readings.
+model Sensor {
+  id           BigInt      @id @default(autoincrement())
+  boardId      BigInt      @map("board_id")
+  siteId       BigInt      @map("site_id")      // denormalized for fast site-level queries
+  code         String      @unique @db.VarChar(50)   // e.g. PZEM-001
+  name         String?     @db.VarChar(200)
+  sensorType   SensorType  @default(power_meter) @map("sensor_type")
+  model        String?     @db.VarChar(100)         // e.g. "PZEM-004T v3.0"
+  channel      String?     @db.VarChar(50)          // e.g. "uart2", "rs485-bus-1"
+  isActive     Boolean     @default(true) @map("is_active")
+
+  // Per-sensor alert thresholds. NULL means "use the global default".
+  voltageMin       Float?  @map("voltage_min")
+  voltageMax       Float?  @map("voltage_max")
+  currentMax       Float?  @map("current_max")
+  powerMax         Float?  @map("power_max")
+  temperatureMax   Float?  @map("temperature_max")
+
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  board        Board       @relation(fields: [boardId], references: [id])
+  site         Site        @relation(fields: [siteId], references: [id])
+
+  @@index([boardId])
+  @@index([siteId])
+  @@map("sensors")
+}
+
+/// Catalog of firmware images released through the platform. The actual .bin
+/// blob is stored on disk under FIRMWARE_UPLOAD_DIR (mounted volume); the row
+/// is just metadata. Boards query `GET /api/firmware/latest` to discover an
+/// upgrade and stream it from `GET /api/firmware/download/:version`.
+model FirmwareRelease {
+  id          BigInt   @id @default(autoincrement())
+  version     String   @unique @db.VarChar(40)
+  description String?  @db.Text
+  filename    String   @db.VarChar(200)
+  fileSize    Int      @map("file_size")
+  sha256      String   @db.VarChar(64)
+  /// When false, `latest` skips this release even if it's the newest. Useful
+  /// for staged rollouts ("upload it now, switch live after the weekend").
+  isActive    Boolean  @default(true) @map("is_active")
+  uploadedBy  BigInt?  @map("uploaded_by")
+  uploadedAt  DateTime @default(now()) @map("uploaded_at") @db.Timestamptz
+
+  @@index([isActive, uploadedAt(sort: Desc)])
+  @@map("firmware_releases")
+}
+
+// Note: telemetry is a TimescaleDB hypertable; manage via raw SQL migration.
+model Telemetry {
+  time         DateTime  @db.Timestamptz
+  sensorId     BigInt    @map("sensor_id")
+  boardId      BigInt    @map("board_id")
+  siteId       BigInt    @map("site_id")
+  voltage      Float?
+  current      Float?
+  power        Float?
+  energy       Float?
+  temperature  Float?
+  humidity     Float?
+  raw          Json?
+
+  @@id([sensorId, time])
+  @@index([siteId, time(sort: Desc)])
+  @@index([boardId, time(sort: Desc)])
+  @@map("telemetry")
+}

@@ -1,0 +1,14 @@
+# Repo-root .dockerignore — applied to all builds using context = repo root.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+.git
+.github
+.vscode
+.idea
+firmware
+docs
+*.zip
+__MACOSX

@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.turbo/
+
+# Database
+*.sqlite
+*.db
+postgres-data/
+redis-data/
+emqx-data/
+emqx-log/
+
+# Prisma
+backend/prisma/migrations/dev/
+
+# Firmware secrets (WiFi/MQTT credentials) + Arduino build cache
+firmware/**/secrets.h
+firmware/**/build/
+
+# Production runtime data (postgres/emqx/redis/firmware uploads) — never commit
+deploy/data/
+
+# Local dev scratch (serial monitor helpers, ad-hoc deploy scripts)
+.mon*.py
+.diag*.py
+.deploy-tmp/
+.tmp-token.txt
+
+# Workspace OS / editor cruft
+*.bak
+*.tmp

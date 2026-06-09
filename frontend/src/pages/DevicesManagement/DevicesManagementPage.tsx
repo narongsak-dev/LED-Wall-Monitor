@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Cpu,
@@ -7,7 +7,6 @@ import {
   Search,
   Plug,
   CircleDot,
-  Ban,
   Plus,
   Pencil,
   Trash2,
@@ -26,6 +25,7 @@ import {
   useUpdateBoard,
 } from '@/features/boards/hooks';
 import { useAdminSites } from '@/features/sites/adminHooks';
+import { useZones } from '@/features/zones/hooks';
 import type {
   BoardWithSensors,
   CreateBoardPayload,
@@ -34,35 +34,74 @@ import type {
 import { BoardFormModal } from './BoardFormModal';
 import { BoardOtaModal } from './BoardOtaModal';
 
+// Mirror the sensor classifier in SensorFormModal so the badges in the
+// list line up with what the form accepts.
+type SensorKindBadge = 'PZEM' | 'KWS-1P' | 'KWS-3P';
+function classifySensor(model: string | null | undefined): SensorKindBadge | null {
+  if (!model) return null;
+  const m = model.toUpperCase();
+  if (m.startsWith('PZEM')) return 'PZEM';
+  if (m.includes('3P') || m.includes('THREE')) return 'KWS-3P';
+  if (m.startsWith('KWS')) return 'KWS-1P';
+  return null;
+}
+const SENSOR_BADGE_COLOR: Record<SensorKindBadge, string> = {
+  'PZEM':   '#06b6d4',
+  'KWS-1P': '#a78bfa',
+  'KWS-3P': '#facc15',
+};
+
+// Three-state freshness per spec:
+//   online  ≤ 30 s   → green
+//   stale   30 s – 5 m → yellow
+//   offline > 5 m     → red
+function boardFreshness(lastSeenAt?: string | null): 'online' | 'stale' | 'offline' | 'never' {
+  if (!lastSeenAt) return 'never';
+  const ageMin = dayjs().diff(lastSeenAt, 'minute', true);
+  if (ageMin < 0.5) return 'online';
+  if (ageMin < 5)   return 'stale';
+  return 'offline';
+}
+
 export function DevicesManagementPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const isSuperAdmin = user?.role === 'super_admin';
   const [search, setSearch] = useState('');
   const [filterSite, setFilterSite] = useState<number | 'all'>('all');
+  const [filterZone, setFilterZone] = useState<number | 'all'>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BoardWithSensors | null>(null);
   const [deleting, setDeleting] = useState<BoardWithSensors | null>(null);
   const [otaTarget, setOtaTarget] = useState<BoardWithSensors | null>(null);
   const { data: sites = [] } = useAdminSites();
+  const { data: zones = [] } = useZones(filterSite === 'all' ? null : filterSite);
   const { data: boards = [], isLoading } = useBoards(
     filterSite === 'all' ? undefined : filterSite,
+  );
+  // Reset zone filter when the site changes so we don't keep a stale value.
+  useEffect(() => { setFilterZone('all'); }, [filterSite]);
+  const zoneById = useMemo(
+    () => new Map(zones.map((z) => [z.id, z])),
+    [zones],
   );
   const createMut = useCreateBoard();
   const updateMut = useUpdateBoard();
   const deleteMut = useDeleteBoard();
 
   const filtered = useMemo(() => {
-    if (!search) return boards;
-    const q = search.toLowerCase();
-    return boards.filter(
-      (b) =>
+    return boards.filter((b) => {
+      if (filterZone !== 'all' && (b.zoneId ?? null) !== filterZone) return false;
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return (
         b.code.toLowerCase().includes(q) ||
         (b.name ?? '').toLowerCase().includes(q) ||
         (b.hardware ?? '').toLowerCase().includes(q) ||
-        (b.siteCode ?? '').toLowerCase().includes(q),
-    );
-  }, [boards, search]);
+        (b.siteCode ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [boards, search, filterZone]);
 
   const stats = useMemo(() => {
     const totalSensors = boards.reduce((acc, b) => acc + (b.sensors?.length ?? 0), 0);
@@ -202,6 +241,34 @@ export function DevicesManagementPage() {
             ))}
           </select>
 
+          {/* Zone filter — only meaningful when a specific site is selected.
+              Hidden otherwise so the user isn't picking zones across sites. */}
+          {filterSite !== 'all' && zones.length > 0 && (
+            <select
+              value={filterZone}
+              onChange={(e) =>
+                setFilterZone(e.target.value === 'all' ? 'all' : Number(e.target.value))
+              }
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text)',
+                padding: '9px 12px',
+                borderRadius: 8,
+                fontSize: 14,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="all">ทุกโซน</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.code} · {z.name}
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Firmware catalog — super_admin only. Lives in this header so the
               menu only shows where it's contextually relevant (managing
               boards), not as a sibling tab in the global sidebar. */}
@@ -292,10 +359,10 @@ export function DevicesManagementPage() {
               <tr>
                 <th style={thStyle}>รหัสบอร์ด</th>
                 <th style={thStyle}>ชื่อ</th>
-                <th style={thStyle}>ฮาร์ดแวร์</th>
                 <th style={thStyle}>Firmware</th>
                 <th style={thStyle}>IP</th>
                 <th style={thStyle}>เซ็นเซอร์</th>
+                <th style={thStyle}>โซน</th>
                 <th style={thStyle}>ไซต์</th>
                 <th style={thStyle}>เห็นล่าสุด</th>
                 <th style={thStyle}>สถานะ</th>
@@ -318,8 +385,13 @@ export function DevicesManagementPage() {
                 </tr>
               ) : (
                 filtered.map((b) => {
-                  const isOnline =
-                    !!b.lastSeenAt && dayjs().diff(b.lastSeenAt, 'minute') < 5;
+                  const fresh = boardFreshness(b.lastSeenAt);
+                  const zone = b.zoneId != null ? zoneById.get(b.zoneId) : null;
+                  // Group sensor models into the three families so the badges
+                  // are stable even when the model strings vary slightly.
+                  const sensorKinds = (b.sensors ?? [])
+                    .map((s) => classifySensor(s.model))
+                    .filter(Boolean) as SensorKindBadge[];
                   return (
                     <tr
                       key={b.id}
@@ -339,16 +411,6 @@ export function DevicesManagementPage() {
                       <td style={{ ...tdStyle, cursor: 'pointer' }} onClick={() => navigate(`/admin/devices/${b.id}`)}>
                         {b.name ?? '-'}
                       </td>
-                      <td
-                        style={{
-                          ...tdStyle,
-                          color: 'var(--dim)',
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        }}
-                      >
-                        {b.hardware ?? '-'}
-                      </td>
                       <td style={{ ...tdStyle, color: 'var(--dim)', fontSize: 12 }}>
                         {b.firmware ?? '-'}
                       </td>
@@ -363,19 +425,44 @@ export function DevicesManagementPage() {
                         {b.ipAddress ?? '-'}
                       </td>
                       <td style={tdStyle}>
-                        <span
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: 999,
-                            background: 'rgba(167, 139, 250, 0.12)',
-                            color: '#a78bfa',
-                            fontSize: 11.5,
-                            fontWeight: 600,
-                            border: '1px solid #a78bfa33',
-                          }}
-                        >
-                          {b.sensors?.length ?? 0} ตัว
-                        </span>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {sensorKinds.length === 0 && (
+                            <span style={{
+                              fontSize: 11, color: 'var(--dim2)', fontStyle: 'italic',
+                            }}>ยังไม่มี</span>
+                          )}
+                          {sensorKinds.map((k, i) => (
+                            <span
+                              key={`${k}-${i}`}
+                              style={{
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                background: `${SENSOR_BADGE_COLOR[k]}1f`,
+                                color: SENSOR_BADGE_COLOR[k],
+                                fontSize: 10.5,
+                                fontWeight: 700,
+                                border: `1px solid ${SENSOR_BADGE_COLOR[k]}40`,
+                                letterSpacing: '.03em',
+                              }}
+                            >{k}</span>
+                          ))}
+                          <span style={{
+                            fontSize: 10, color: 'var(--dim2)',
+                            alignSelf: 'center', marginLeft: 2,
+                          }}>
+                            {sensorKinds.length}/2
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ ...tdStyle, color: 'var(--dim)', fontSize: 12 }}>
+                        {zone ? (
+                          <span>
+                            <strong style={{ color: 'var(--text)' }}>{zone.code}</strong>
+                            <span style={{ color: 'var(--dim2)' }}> · {zone.name}</span>
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--dim2)', fontStyle: 'italic' }}>—</span>
+                        )}
                       </td>
                       <td style={{ ...tdStyle, color: 'var(--dim)' }}>
                         <div style={{ fontSize: 13 }}>{b.siteName}</div>
@@ -385,19 +472,7 @@ export function DevicesManagementPage() {
                         {b.lastSeenAt ? dayjs(b.lastSeenAt).fromNow() : 'ยังไม่เคยส่งข้อมูล'}
                       </td>
                       <td style={tdStyle}>
-                        <span
-                          className={isOnline ? 'badge badge-online' : 'badge badge-offline'}
-                        >
-                          {isOnline ? (
-                            <>
-                              <CircleDot size={10} /> Online
-                            </>
-                          ) : (
-                            <>
-                              <Ban size={10} /> Offline
-                            </>
-                          )}
-                        </span>
+                        <FreshnessBadge state={fresh} />
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: 6 }}>
@@ -633,3 +708,26 @@ const emptyStyle: React.CSSProperties = {
   color: 'var(--dim)',
   padding: '40px 20px',
 };
+
+// Three-state freshness pill — matches the rules engine's thresholds so
+// the column reads consistently with what triggers backend alerts.
+function FreshnessBadge({ state }: { state: 'online' | 'stale' | 'offline' | 'never' }) {
+  const v = state === 'online'  ? { c: 'var(--green)',  bg: 'rgba(34,197,94,0.1)',  br: 'rgba(34,197,94,0.3)',  l: 'Online'  }
+          : state === 'stale'   ? { c: 'var(--yellow)', bg: 'rgba(250,204,21,0.1)', br: 'rgba(250,204,21,0.3)', l: 'Stale'   }
+          : state === 'offline' ? { c: 'var(--red)',    bg: 'rgba(239,68,68,0.1)',  br: 'rgba(239,68,68,0.3)',  l: 'Offline' }
+          :                       { c: 'var(--dim)',    bg: 'rgba(148,163,184,0.1)',br: 'rgba(148,163,184,0.3)',l: 'ไม่เคย' };
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 10px', borderRadius: 999,
+      background: v.bg, border: `1px solid ${v.br}`, color: v.c,
+      fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: '50%',
+        background: v.c, display: 'inline-block',
+      }} />
+      {v.l}
+    </span>
+  );
+}

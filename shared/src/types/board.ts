@@ -17,7 +17,7 @@ export interface BoardWithSensors extends Board {
   siteName?: string;
   zoneCode?: string;
   zoneName?: string;
-  sensors: { id: number; code: string; name: string | null }[];
+  sensors: { id: number; code: string; name: string | null; model: string | null }[];
 }
 
 export interface CreateBoardPayload {

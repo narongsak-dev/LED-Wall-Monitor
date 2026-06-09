@@ -18,15 +18,44 @@ export class SitesService {
       where: { userId: BigInt(userId), site: { isActive: true } },
       include: { site: true },
     });
-    return records.map((r) => ({
+    const enriched = await this.enrichWithCounts(records.map((r) => r.site));
+    return records.map((r, i) => ({
       permission: r.permission,
-      site: this.toPublic(r.site),
+      site: enriched[i],
     }));
   }
 
   async listAll() {
     const sites = await this.prisma.site.findMany({ orderBy: { id: 'asc' } });
-    return sites.map((s) => this.toPublic(s));
+    return this.enrichWithCounts(sites);
+  }
+
+  /** Pull zoneCount / boardCount / sensorCount / tariffConfigured for each
+   *  site in a single round-trip per resource so the admin list page can
+   *  render a useful summary without N+1 fetches from the client. */
+  private async enrichWithCounts(sites: PrismaSite[]) {
+    if (sites.length === 0) return [];
+    const ids = sites.map((s) => s.id);
+
+    const [zoneAgg, boardAgg, sensorAgg, tariffs] = await Promise.all([
+      this.prisma.zone.groupBy({ by: ['siteId'], where: { siteId: { in: ids } }, _count: { _all: true } }),
+      this.prisma.board.groupBy({ by: ['siteId'], where: { siteId: { in: ids } }, _count: { _all: true } }),
+      this.prisma.sensor.groupBy({ by: ['siteId'], where: { siteId: { in: ids } }, _count: { _all: true } }),
+      this.prisma.tariff.findMany({ where: { siteId: { in: ids } }, select: { siteId: true } }),
+    ]);
+
+    const zoneByKey   = new Map(zoneAgg.map((r) => [r.siteId.toString(), r._count._all]));
+    const boardByKey  = new Map(boardAgg.map((r) => [r.siteId.toString(), r._count._all]));
+    const sensorByKey = new Map(sensorAgg.map((r) => [r.siteId.toString(), r._count._all]));
+    const tariffSet   = new Set(tariffs.map((t) => t.siteId.toString()));
+
+    return sites.map((s) => ({
+      ...this.toPublic(s),
+      zoneCount:        zoneByKey.get(s.id.toString())   ?? 0,
+      boardCount:       boardByKey.get(s.id.toString())  ?? 0,
+      sensorCount:      sensorByKey.get(s.id.toString()) ?? 0,
+      tariffConfigured: tariffSet.has(s.id.toString()),
+    }));
   }
 
   async findOne(id: bigint) {

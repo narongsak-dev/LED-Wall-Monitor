@@ -9,6 +9,12 @@ export interface Site {
   timezone: string;
   isActive: boolean;
   createdAt: string;
+  // Optional summary counts — present on list endpoints, omitted on the
+  // bare detail/upsert responses to keep the payload predictable.
+  zoneCount?: number;
+  boardCount?: number;
+  sensorCount?: number;
+  tariffConfigured?: boolean;
 }
 
 export interface Group {

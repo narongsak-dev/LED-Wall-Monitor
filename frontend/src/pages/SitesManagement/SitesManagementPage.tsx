@@ -13,7 +13,6 @@ import {
   Power,
   ChevronRight,
 } from 'lucide-react';
-import { dayjs } from '@/lib/dayjs';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { showToast } from '@/lib/toast';
 import {
@@ -250,22 +249,24 @@ export function SitesManagementPage() {
                 <th style={thStyle}>รหัส</th>
                 <th style={thStyle}>ชื่อไซต์</th>
                 <th style={thStyle}>สถานที่</th>
-                <th style={thStyle}>Timezone</th>
+                <th style={thStyle}>โซน</th>
+                <th style={thStyle}>บอร์ด</th>
+                <th style={thStyle}>เซ็นเซอร์</th>
+                <th style={thStyle}>Tariff</th>
                 <th style={thStyle}>สถานะ</th>
-                <th style={thStyle}>วันที่สร้าง</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>จัดการ</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} style={emptyStyle}>
+                  <td colSpan={10} style={emptyStyle}>
                     กำลังโหลด...
                   </td>
                 </tr>
               ) : pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={emptyStyle}>
+                  <td colSpan={10} style={emptyStyle}>
                     <Plug size={32} color="#94a3b8" style={{ marginBottom: 8 }} />
                     <div>ไม่พบไซต์</div>
                   </td>
@@ -294,8 +295,35 @@ export function SitesManagementPage() {
                         {s.location ?? '-'}
                       </span>
                     </td>
-                    <td style={{ ...tdStyle, color: 'var(--dim)', fontSize: 12, fontFamily: 'monospace' }}>
-                      {s.timezone}
+                    <td style={{ ...tdStyle, fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={countPill('#a78bfa')}>{s.zoneCount ?? 0}</span>
+                    </td>
+                    <td style={{ ...tdStyle, fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={countPill('#06b6d4')}>{s.boardCount ?? 0}</span>
+                    </td>
+                    <td style={{ ...tdStyle, fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={countPill('#22c55e')}>{s.sensorCount ?? 0}</span>
+                    </td>
+                    <td style={tdStyle}>
+                      {s.tariffConfigured ? (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '2px 8px', borderRadius: 6,
+                          background: 'rgba(34,197,94,0.1)',
+                          color: 'var(--green)',
+                          border: '1px solid rgba(34,197,94,0.3)',
+                          fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+                        }}>SET</span>
+                      ) : (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '2px 8px', borderRadius: 6,
+                          background: 'rgba(148,163,184,0.1)',
+                          color: 'var(--dim)',
+                          border: '1px solid rgba(148,163,184,0.3)',
+                          fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+                        }}>—</span>
+                      )}
                     </td>
                     <td style={tdStyle}>
                       <span
@@ -311,9 +339,6 @@ export function SitesManagementPage() {
                           </>
                         )}
                       </span>
-                    </td>
-                    <td style={{ ...tdStyle, color: 'var(--dim2)', fontSize: 12 }}>
-                      {dayjs(s.createdAt).format('DD/MM/YYYY')}
                     </td>
                     <td
                       style={{ ...tdStyle, textAlign: 'center' }}
@@ -598,3 +623,12 @@ const primaryBtnStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
 };
+
+// Compact numeric pill used by the count columns (zones/boards/sensors).
+// Same shape across colors so the row stays visually aligned.
+const countPill = (color: string): React.CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  minWidth: 30, padding: '2px 10px', borderRadius: 999,
+  background: `${color}1f`, color, border: `1px solid ${color}40`,
+  fontSize: 12, fontWeight: 700, letterSpacing: '.04em',
+});

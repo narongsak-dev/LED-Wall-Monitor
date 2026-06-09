@@ -135,10 +135,11 @@ export class BoardsService {
       zoneCode: b.zone?.code,
       zoneName: b.zone?.name,
       sensors:
-        b.sensors?.map((s: { id: bigint; code: string; name: string | null }) => ({
+        b.sensors?.map((s: { id: bigint; code: string; name: string | null; model: string | null }) => ({
           id: Number(s.id),
           code: s.code,
           name: s.name,
+          model: s.model,
         })) ?? [],
     };
   }

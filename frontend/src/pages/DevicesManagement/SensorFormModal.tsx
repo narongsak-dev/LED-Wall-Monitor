@@ -18,7 +18,11 @@ interface Props {
 
 // The two supported sensor kinds, with their derived fields baked in so the
 // user only has to pick once.
-type SensorKind = 'PZEM' | 'KWS';
+// Three concrete sensor variants. The KWS family is split into 1-phase
+// and 3-phase so the operator can pick exactly what hardware is wired up,
+// but the per-board constraint "at most one KWS" treats both variants as
+// the same family (they share the RS485 bus + slave address).
+type SensorKind = 'PZEM' | 'KWS_1P' | 'KWS_3P';
 const SENSOR_KINDS: Record<
   SensorKind,
   {
@@ -28,31 +32,44 @@ const SENSOR_KINDS: Record<
     channel: string;
     sensorType: 'power_meter';
     defaultCode: string;
+    family: 'PZEM' | 'KWS';
   }
 > = {
   PZEM: {
     label: 'PZEM-004T',
-    description: 'มิเตอร์ AC ผ่าน TTL (HMI port)',
+    description: 'มิเตอร์ AC 1 เฟส ผ่าน TTL (HMI port)',
     model: 'PZEM-004T',
     channel: 'hmi',
     sensorType: 'power_meter',
     defaultCode: 'PZEM-001',
+    family: 'PZEM',
   },
-  KWS: {
-    label: 'KWS-AC301L',
-    description: 'มิเตอร์ AC ผ่าน RS485 (A/B) + อุณหภูมิ',
+  KWS_1P: {
+    label: 'KWS-AC301L (1-phase)',
+    description: 'มิเตอร์ AC 1 เฟส ผ่าน RS485 + อุณหภูมิ',
     model: 'KWS-AC301L',
     channel: 'rs485',
     sensorType: 'power_meter',
     defaultCode: 'KWS-001',
+    family: 'KWS',
+  },
+  KWS_3P: {
+    label: 'KWS-AC301L (3-phase)',
+    description: 'มิเตอร์ AC 3 เฟส ผ่าน RS485 (L1/L2/L3)',
+    model: 'KWS-AC301L 3P',
+    channel: 'rs485',
+    sensorType: 'power_meter',
+    defaultCode: 'KWS-001',
+    family: 'KWS',
   },
 };
 
 function detectKind(model: string | null | undefined): SensorKind | null {
   if (!model) return null;
-  const lower = model.toLowerCase();
-  if (lower.startsWith('pzem')) return 'PZEM';
-  if (lower.startsWith('kws')) return 'KWS';
+  const m = model.toUpperCase();
+  if (m.startsWith('PZEM')) return 'PZEM';
+  if (m.includes('3P') || m.includes('THREE')) return 'KWS_3P';
+  if (m.startsWith('KWS')) return 'KWS_1P';
   return null;
 }
 
@@ -76,13 +93,15 @@ export function SensorFormModal({
   const [tMax, setTMax] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Which kinds are already used on this board?
-  const usedKinds = useMemo(() => {
-    const set = new Set<SensorKind>();
+  // Which families are already used on this board? KWS_1P and KWS_3P
+  // share the "KWS" family and the RS485 bus, so picking one locks out
+  // the other. PZEM is its own family.
+  const usedFamilies = useMemo(() => {
+    const set = new Set<'PZEM' | 'KWS'>();
     for (const s of existingSensors) {
       if (editing && s.id === editing.id) continue;
       const k = detectKind(s.model);
-      if (k) set.add(k);
+      if (k) set.add(SENSOR_KINDS[k].family);
     }
     return set;
   }, [existingSensors, editing]);
@@ -90,9 +109,9 @@ export function SensorFormModal({
   const availableKinds = useMemo(
     () =>
       (Object.keys(SENSOR_KINDS) as SensorKind[]).filter(
-        (k) => !usedKinds.has(k),
+        (k) => !usedFamilies.has(SENSOR_KINDS[k].family),
       ),
-    [usedKinds],
+    [usedFamilies],
   );
 
   useEffect(() => {
@@ -164,7 +183,8 @@ export function SensorFormModal({
       voltageMax: parseNum(vMax),
       currentMax: parseNum(iMax),
       powerMax: parseNum(wMax),
-      temperatureMax: kind === 'KWS' ? parseNum(tMax) : null,
+      // Only the KWS family carries a temperature probe.
+      temperatureMax: SENSOR_KINDS[kind].family === 'KWS' ? parseNum(tMax) : null,
     };
     onSubmit(payload);
   };
@@ -246,9 +266,12 @@ export function SensorFormModal({
             <div style={{ display: 'grid', gap: 10 }}>
               {(Object.keys(SENSOR_KINDS) as SensorKind[]).map((k) => {
                 const spec = SENSOR_KINDS[k];
-                const isUsed = usedKinds.has(k);
+                const familyUsed = usedFamilies.has(spec.family);
                 const isSelected = kind === k;
-                const disabled = isUsed && (!editing || detectKind(editing.model) !== k);
+                // Disable a variant when its FAMILY is already in use on
+                // another sensor (board has at most one of each family).
+                const disabled = familyUsed
+                  && (!editing || SENSOR_KINDS[detectKind(editing.model) ?? 'PZEM'].family !== spec.family);
                 return (
                   <button
                     key={k}
@@ -396,7 +419,7 @@ export function SensorFormModal({
                   style={inputStyle}
                 />
               </Field>
-              {kind === 'KWS' && (
+              {SENSOR_KINDS[kind].family === 'KWS' && (
                 <Field label="Temperature สูงสุด (°C)">
                   <input
                     type="number"

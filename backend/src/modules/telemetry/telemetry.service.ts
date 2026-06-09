@@ -373,6 +373,51 @@ export class TelemetryService {
     };
   }
 
+  /** Per-zone aggregates for the Dashboard's Zone Overview card. Returns
+   *  one row per zone (plus a `null` row for boards not assigned to any
+   *  zone) covering the same time bounds the report endpoint uses. */
+  async zoneSummary(query: QueryTelemetryDto) {
+    const bounds = this.resolveBounds(query);
+    const rows = await this.prisma.$queryRaw<Array<{
+      zone_id: bigint | null;
+      zone_code: string | null;
+      zone_name: string | null;
+      board_count: bigint;
+      sensor_count: bigint;
+      energy: number | null;
+      power_avg: number | null;
+      power_max: number | null;
+    }>>`
+      SELECT
+        bd.zone_id                                  AS zone_id,
+        z.code                                      AS zone_code,
+        z.name                                      AS zone_name,
+        COUNT(DISTINCT bd.id)                       AS board_count,
+        COUNT(DISTINCT t.sensor_id)                 AS sensor_count,
+        COALESCE(MAX(t.energy) - MIN(t.energy), 0)::float AS energy,
+        AVG(t.power)::float                         AS power_avg,
+        MAX(t.power)::float                         AS power_max
+      FROM telemetry t
+      JOIN boards bd ON bd.id = t.board_id
+      LEFT JOIN zones z ON z.id = bd.zone_id
+      WHERE t.site_id = ${BigInt(query.siteId)}
+        AND t.time >= ${bounds.from}
+        AND t.time <  ${bounds.to}
+      GROUP BY bd.zone_id, z.code, z.name
+      ORDER BY energy DESC NULLS LAST
+    `;
+    return rows.map((r) => ({
+      zoneId: r.zone_id != null ? Number(r.zone_id) : null,
+      zoneCode: r.zone_code,
+      zoneName: r.zone_name,
+      boardCount: Number(r.board_count),
+      sensorCount: Number(r.sensor_count),
+      energy: r.energy ?? 0,
+      powerAvg: r.power_avg ?? 0,
+      powerMax: r.power_max ?? 0,
+    }));
+  }
+
   /** Asia/Bangkok is UTC+7 with no DST, so "midnight Bangkok" is just
    *  midnight UTC minus 7 hours. We use this for the calendar-aware ranges
    *  (MONTH_CAL, YEAR_CAL) since the user reads reports in local time. */

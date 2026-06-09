@@ -55,4 +55,12 @@ export class TelemetryController {
     await this.sites.assertUserCanAccess(user.id, query.siteId);
     return this.telemetry.report(query);
   }
+
+  /** Zone-by-zone energy + sensor counts for the Dashboard's Zone Overview.
+   *  Single round-trip — beats N per-zone summary calls from the browser. */
+  @Get('zone-summary')
+  async zoneSummary(@Query() query: QueryTelemetryDto, @CurrentUser() user: AuthUser) {
+    await this.sites.assertUserCanAccess(user.id, query.siteId);
+    return this.telemetry.zoneSummary(query);
+  }
 }

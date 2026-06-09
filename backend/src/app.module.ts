@@ -17,6 +17,8 @@ import { MqttModule } from './modules/mqtt/mqtt.module';
 import { HealthModule } from './modules/health/health.module';
 import { PasswordResetModule } from './modules/password-reset/password-reset.module';
 import { FirmwareModule } from './modules/firmware/firmware.module';
+import { TariffsModule } from './modules/tariffs/tariffs.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
 import { envValidationSchema } from './config/env.validation';
 
 @Module({
@@ -40,6 +42,8 @@ import { envValidationSchema } from './config/env.validation';
     HealthModule,
     PasswordResetModule,
     FirmwareModule,
+    TariffsModule,
+    AlertsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: MustChangePasswordGuard }],
 })

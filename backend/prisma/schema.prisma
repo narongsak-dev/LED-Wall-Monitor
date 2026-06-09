@@ -47,6 +47,7 @@ model User {
   loginLogs     LoginLog[]
   resetRequests       PasswordResetRequest[] @relation("ResetRequester")
   resetApprovals      PasswordResetRequest[] @relation("ResetApprover")
+  ackedAlerts         Alert[] @relation("AlertAck")
 
   @@map("users")
 }
@@ -141,6 +142,8 @@ model Site {
   sensors     Sensor[]
   zones       Zone[]
   userSites   UserSite[]
+  tariff      Tariff?
+  alerts      Alert[]
 
   @@index([groupId])
   @@map("sites")
@@ -255,6 +258,60 @@ model FirmwareRelease {
 }
 
 // Note: telemetry is a TimescaleDB hypertable; manage via raw SQL migration.
+/// Energy tariff per site. Keep the schema simple for now — one flat rate
+/// per Site. Tiered / time-of-use pricing can extend this later by adding
+/// rows + dispatch logic without breaking the v1 contract.
+model Tariff {
+  id        BigInt   @id @default(autoincrement())
+  siteId    BigInt   @unique @map("site_id")
+  rate      Float    @db.DoublePrecision
+  currency  String   @default("THB") @db.VarChar(8)
+  name      String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt       @map("updated_at") @db.Timestamptz
+
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("tariffs")
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// Anomaly records produced by AlertRulesService. Acknowledgement lets an
+/// operator mark a known issue as "I'm aware" without resolving the
+/// underlying condition. resolvedAt is set automatically when the rule's
+/// condition clears (e.g. board comes back online); a NULL means "open".
+model Alert {
+  id              BigInt        @id @default(autoincrement())
+  siteId          BigInt        @map("site_id")
+  zoneId          BigInt?       @map("zone_id")
+  boardId         BigInt?       @map("board_id")
+  sensorId        BigInt?       @map("sensor_id")
+  severity        AlertSeverity
+  code            String        @db.VarChar(50)
+  message         String        @db.VarChar(500)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  resolvedAt      DateTime?     @map("resolved_at") @db.Timestamptz
+  acknowledgedAt  DateTime?     @map("acknowledged_at") @db.Timestamptz
+  acknowledgedBy  BigInt?       @map("acknowledged_by")
+
+  site      Site  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  ackUser   User? @relation("AlertAck", fields: [acknowledgedBy], references: [id], onDelete: SetNull)
+
+  // One open alert per (site, target, code) so the rules engine can upsert
+  // without dedup logic on its own. NULLs in target columns collapse to
+  // distinct values in Postgres — that's what we want (e.g. one site-wide
+  // alert vs one per-board alert with the same code).
+  @@unique([siteId, boardId, sensorId, code, resolvedAt])
+  @@index([siteId, createdAt(sort: Desc)])
+  @@index([siteId, resolvedAt])
+  @@map("alerts")
+}
+
 model Telemetry {
   time         DateTime  @db.Timestamptz
   sensorId     BigInt    @map("sensor_id")

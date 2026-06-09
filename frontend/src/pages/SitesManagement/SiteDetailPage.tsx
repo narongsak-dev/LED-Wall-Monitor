@@ -16,7 +16,9 @@ import {
   Ban,
   ChevronRight,
   Map,
+  Sigma,
 } from 'lucide-react';
+import { useTariff, useUpsertTariff } from '@/features/tariff/hooks';
 import { dayjs } from '@/lib/dayjs';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { showToast } from '@/lib/toast';
@@ -305,6 +307,9 @@ export function SiteDetailPage() {
           value={stats.sensors}
         />
       </div>
+
+      {/* Tariff settings */}
+      <TariffSection siteId={siteIdNum} />
 
       {/* Zones section */}
       <div
@@ -874,3 +879,172 @@ const primaryBtnStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
 };
+
+// ─── Tariff section ───────────────────────────────────────────────
+// Single flat THB/kWh rate per site. The Dashboard "ค่าไฟ" card + the
+// Report "ค่าไฟประมาณ" card multiply this by the energy delta — so the
+// value here drives every cost surface in the app.
+function TariffSection({ siteId }: { siteId: number }) {
+  const { data: tariff, isLoading } = useTariff(siteId);
+  const upsert = useUpsertTariff(siteId);
+  const [editing, setEditing] = useState(false);
+  const [rate, setRate] = useState('');
+  const [name, setName] = useState('');
+
+  // Sync local form state when the underlying tariff loads / changes.
+  const startEdit = () => {
+    setRate(tariff?.rate?.toString() ?? '');
+    setName(tariff?.name ?? '');
+    setEditing(true);
+  };
+  const submit = async () => {
+    const r = Number(rate);
+    if (!Number.isFinite(r) || r < 0) {
+      showToast('กรอกค่าไฟเป็นตัวเลข ≥ 0', 'error');
+      return;
+    }
+    try {
+      await upsert.mutateAsync({ rate: r, currency: 'THB', name: name || undefined });
+      showToast('บันทึกอัตราค่าไฟแล้ว', 'success');
+      setEditing(false);
+    } catch (err) {
+      showToast((err as Error).message ?? 'บันทึกไม่สำเร็จ', 'error');
+    }
+  };
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 12,
+        padding: 18,
+        marginBottom: 18,
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 12,
+      }}>
+        <h3 style={{
+          margin: 0, fontSize: 14, color: 'var(--text)',
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+        }}>
+          <Sigma size={16} color="#facc15" /> อัตราค่าไฟ (Tariff)
+          <span style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 400 }}>
+            ใช้คำนวณค่าไฟทั้งใน Dashboard และ Report
+          </span>
+        </h3>
+        {!editing && (
+          <button
+            onClick={startEdit}
+            style={{
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text)',
+              padding: '7px 14px', borderRadius: 8,
+              fontSize: 12.5, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <Pencil size={13} /> {tariff ? 'แก้ไข' : 'ตั้งค่า'}
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div style={{ color: 'var(--dim)', fontSize: 12 }}>กำลังโหลด...</div>
+      ) : editing ? (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <label style={{
+              display: 'block', fontSize: 10.5, color: 'var(--dim)',
+              fontWeight: 600, marginBottom: 5,
+              textTransform: 'uppercase', letterSpacing: 0.4,
+            }}>
+              ราคาต่อ kWh (บาท)
+            </label>
+            <input
+              type="number" step="0.01" min="0" value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              placeholder="4.50"
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text)',
+                padding: '8px 12px', borderRadius: 8, fontSize: 14,
+                fontFamily: 'inherit', outline: 'none', width: 140,
+              }}
+            />
+          </div>
+          <div>
+            <label style={{
+              display: 'block', fontSize: 10.5, color: 'var(--dim)',
+              fontWeight: 600, marginBottom: 5,
+              textTransform: 'uppercase', letterSpacing: 0.4,
+            }}>
+              ชื่อเรียก (optional)
+            </label>
+            <input
+              type="text" value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="TOU peak / off-peak / flat"
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text)',
+                padding: '8px 12px', borderRadius: 8, fontSize: 14,
+                fontFamily: 'inherit', outline: 'none', width: 200,
+              }}
+            />
+          </div>
+          <button
+            onClick={submit}
+            disabled={upsert.isPending}
+            style={{
+              background: 'var(--cyan)', border: 'none', color: '#000',
+              padding: '9px 18px', borderRadius: 8,
+              fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >บันทึก</button>
+          <button
+            onClick={() => setEditing(false)}
+            style={{
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text)',
+              padding: '9px 14px', borderRadius: 8,
+              fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >ยกเลิก</button>
+        </div>
+      ) : tariff ? (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
+          <span style={{
+            fontSize: 28, fontWeight: 700, color: 'var(--text)',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {tariff.rate.toFixed(2)}
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--dim)', marginLeft: 6 }}>
+              {tariff.currency}/kWh
+            </span>
+          </span>
+          {tariff.name && (
+            <span style={{ fontSize: 12, color: 'var(--dim)' }}>· {tariff.name}</span>
+          )}
+        </div>
+      ) : (
+        <div style={{
+          color: 'var(--dim)', fontSize: 13,
+          padding: '6px 0',
+        }}>
+          ยังไม่ได้ตั้งอัตราค่าไฟ — ตั้งค่าเพื่อให้ Dashboard และ Report แสดงค่าไฟโดยประมาณ
+        </div>
+      )}
+    </div>
+  );
+}

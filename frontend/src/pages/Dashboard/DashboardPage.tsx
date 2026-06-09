@@ -28,6 +28,9 @@ import { useSiteSensors } from '@/features/sensors/hooks';
 import { useZones } from '@/features/zones/hooks';
 import { useBoards } from '@/features/boards/hooks';
 import { useTelemetrySummary } from '@/features/telemetry/hooks';
+import { useTariff } from '@/features/tariff/hooks';
+import { useAckAlert, useAlerts, useZoneSummary } from '@/features/alerts/hooks';
+import type { Alert as AlertRow, ZoneSummaryRow } from '@monitor/shared';
 import { useTheme } from '@/features/theme/useTheme';
 import { CHART_THEMES } from '@/features/theme/chartTheme';
 import { dayjs } from '@/lib/dayjs';
@@ -235,6 +238,16 @@ export function DashboardPage() {
   const energyToday = summary?.energy?.delta ?? null;
   const peakPower   = summary?.power?.max ?? null;
 
+  // Phase 3 data: real tariff (for cost cards), real alerts (for the
+  // alert panel + insight derivation), real per-zone energy aggregates.
+  const { data: tariff = null }   = useTariff(id);
+  const { data: alerts = [] }     = useAlerts(id, true);
+  const { data: zoneSummary = [] } = useZoneSummary(id, 'today');
+  const ackMut = useAckAlert(id);
+  const costToday = energyToday != null && tariff != null
+    ? energyToday * tariff.rate
+    : null;
+
   // ─── Realtime chart series ──────────────────────────────────────
   type Window = '5m' | '15m' | '30m' | '1h';
   const [chartWindow, setChartWindow] = useState<Window>('15m');
@@ -373,11 +386,18 @@ export function DashboardPage() {
         id: z.id, code: z.code, name: z.name,
         boardOnline: bOnline, boardTotal: zb.length,
         sensorOnline: sOnline, sensorTotal: zsensors.length,
-        powerNow: pNow, energyToday: eDay, worstFreshness: worst,
+        // Prefer the backend zone-summary row when available — it's the
+        // accurate "today" number from a real SQL aggregate rather than
+        // the in-memory history approximation (eDay).
+        powerNow: pNow,
+        energyToday:
+          zoneSummary.find((zs: ZoneSummaryRow) => zs.zoneId === z.id)?.energy
+          ?? eDay,
+        worstFreshness: worst,
       });
     }
     return result;
-  }, [zones, boards, boardsByZone, activeSensors, site, now]);
+  }, [zones, boards, boardsByZone, activeSensors, site, now, zoneSummary]);
 
   // ─── Render ────────────────────────────────────────────────────
   if (id == null) {
@@ -484,12 +504,14 @@ export function DashboardPage() {
         />
         <SummaryCard
           icon={<Sigma size={20} />}
-          label="ค่าไฟวันนี้ (โดยประมาณ)"
-          value="—"
-          unit="บาท"
-          sub="ยังไม่ได้ตั้งค่า tariff"
+          label="ค่าไฟ 24 ชม."
+          value={costToday != null ? costToday.toFixed(2) : '—'}
+          unit={tariff?.currency ?? 'บาท'}
+          sub={tariff != null
+            ? `อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`
+            : 'ยังไม่ได้ตั้งค่า tariff'}
           scope={scopeLabel(zoneId, boardId, zones, boards)}
-          state="never"
+          state={costToday == null ? 'never' : 'fresh'}
         />
       </div>
 
@@ -522,15 +544,9 @@ export function DashboardPage() {
         {/* Right: Alerts + Quick Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <AlertPanel
-            zoneAggs={zoneAggs}
-            sensorsInScope={sensorsInScope}
-            site={site}
-            now={now}
-            voltageOk={
-              live.voltageAvg == null ||
-              (live.voltageAvg >= 210 && live.voltageAvg <= 240)
-            }
-            tempMax={live.tempMax}
+            alerts={alerts}
+            onAcknowledge={(alertId) => ackMut.mutate(alertId)}
+            navigate={navigate}
           />
           <QuickActions navigate={navigate} siteId={id} />
         </div>
@@ -990,50 +1006,20 @@ function MiniStat({ label, value, unit }: { label: string; value: string; unit: 
   );
 }
 
-// ─── 4c. Alert Panel (placeholder until alerts table exists) ───
+// ─── 4c. Alert Panel (server-backed) ────────────────────────────
 function AlertPanel(props: {
-  zoneAggs: Array<{ id: number | null; code: string; name: string; worstFreshness: Freshness; sensorOnline: number; sensorTotal: number }>;
-  sensorsInScope: SensorWithContext[];
-  site: ReturnType<typeof useSiteRealtime>;
-  now: number;
-  voltageOk: boolean;
-  tempMax: number | null;
+  alerts: AlertRow[];
+  onAcknowledge: (alertId: number) => void;
+  navigate: ReturnType<typeof useNavigate>;
 }) {
-  // Derive on-the-fly anomalies from the realtime store so the user gets
-  // something useful before a dedicated alerts backend exists.
-  const alerts: Array<{ id: string; severity: 'warning' | 'critical'; label: string; detail: string }> = [];
-  for (const z of props.zoneAggs) {
-    if (z.sensorTotal > 0 && z.sensorOnline < z.sensorTotal) {
-      alerts.push({
-        id: `zone-${z.id}-offline`,
-        severity: z.sensorOnline === 0 ? 'critical' : 'warning',
-        label: `${z.code} · ${z.name}`,
-        detail: `sensor online ${z.sensorOnline}/${z.sensorTotal}`,
-      });
-    }
-  }
-  if (!props.voltageOk) {
-    alerts.push({
-      id: 'voltage', severity: 'warning',
-      label: 'แรงดันไฟฟ้า',
-      detail: 'อยู่นอกช่วง 210–240 V',
-    });
-  }
-  if (props.tempMax != null && props.tempMax >= 40) {
-    alerts.push({
-      id: 'temp', severity: props.tempMax >= 50 ? 'critical' : 'warning',
-      label: 'อุณหภูมิเบรกเกอร์',
-      detail: `${props.tempMax.toFixed(1)}°C`,
-    });
-  }
-
+  const { alerts, onAcknowledge, navigate } = props;
   return (
     <section className="card" style={{ padding: 18 }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 12,
       }}>
-        <span className="card-title">แจ้งเตือนล่าสุด</span>
+        <span className="card-title">แจ้งเตือนที่ยังไม่ปิด</span>
         <span style={{ fontSize: 11, color: 'var(--dim)' }}>
           {alerts.length === 0 ? 'ไม่พบ' : `${alerts.length} รายการ`}
         </span>
@@ -1049,25 +1035,69 @@ function AlertPanel(props: {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {alerts.slice(0, 6).map((a) => {
-            const color = a.severity === 'critical' ? 'var(--red)' : 'var(--yellow)';
+            const color = a.severity === 'CRITICAL' ? 'var(--red)' : 'var(--yellow)';
+            const acked = a.acknowledgedAt != null;
             return (
               <div key={a.id} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10,
                 padding: '8px 10px', borderRadius: 8,
-                background: a.severity === 'critical'
+                background: a.severity === 'CRITICAL'
                   ? 'rgba(239, 68, 68, 0.06)'
                   : 'rgba(250, 204, 21, 0.06)',
                 border: `1px solid ${color}33`,
+                opacity: acked ? 0.7 : 1,
               }}>
                 <AlertTriangle size={14} color={color} style={{ marginTop: 2 }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
-                    {a.label}
+                  <div style={{
+                    fontSize: 12.5, fontWeight: 600, color: 'var(--text)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span>{a.message}</span>
+                    {acked && (
+                      <span style={{
+                        fontSize: 9, padding: '1px 6px', borderRadius: 4,
+                        background: 'rgba(148, 163, 184, 0.15)', color: 'var(--dim)',
+                        fontWeight: 700, letterSpacing: 0.04,
+                      }}>ACKED</span>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--dim)', marginTop: 2 }}>
-                    {a.detail}
+                  <div style={{
+                    fontSize: 11, color: 'var(--dim2)', marginTop: 2,
+                    display: 'flex', gap: 8,
+                  }}>
+                    <span>{a.code}</span>
+                    <span>·</span>
+                    <span>{dayjs(a.createdAt).fromNow()}</span>
+                    {a.boardId && (
+                      <>
+                        <span>·</span>
+                        <button
+                          onClick={() => navigate(`/admin/devices/${a.boardId}`)}
+                          style={{
+                            background: 'none', border: 'none', padding: 0,
+                            color: 'var(--cyan)', cursor: 'pointer',
+                            fontSize: 11, fontFamily: 'inherit',
+                          }}
+                        >ดูบอร์ด</button>
+                      </>
+                    )}
                   </div>
                 </div>
+                {!acked && (
+                  <button
+                    onClick={() => onAcknowledge(a.id)}
+                    title="รับทราบ"
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--dim)',
+                      padding: '2px 8px', borderRadius: 6,
+                      fontSize: 10.5, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >ACK</button>
+                )}
               </div>
             );
           })}

@@ -7,3 +7,5 @@ export * from './types/telemetry';
 export * from './types/api';
 export * from './types/password-reset';
 export * from './types/firmware';
+export * from './types/tariff';
+export * from './types/alert';

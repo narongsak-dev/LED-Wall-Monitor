@@ -30,6 +30,7 @@ import {
 import { useSiteSensors } from '@/features/sensors/hooks';
 import { useZones } from '@/features/zones/hooks';
 import { useBoards } from '@/features/boards/hooks';
+import { useTariff } from '@/features/tariff/hooks';
 import { exportToCsv } from '@/features/export/exportCsv';
 import { fetchTelemetryReport, fetchTelemetrySummary } from '@/features/telemetry/api';
 import type { TelemetrySummary } from '@/features/telemetry/api';
@@ -118,6 +119,7 @@ export function DataReportPage() {
   const { data: sensors = [] }  = useSiteSensors(id);
   const { data: zones = [] }    = useZones(id);
   const { data: boards = [] }   = useBoards(id ?? undefined);
+  const { data: tariff = null } = useTariff(id);
 
   // Filter cascade — selecting Zone trims Board; selecting Board trims Sensor.
   useEffect(() => { setBoardId('all'); setSensorId('all'); }, [zoneId]);
@@ -427,6 +429,7 @@ export function DataReportPage() {
       <SummaryCards
         summary={summary} prev={prevSummary}
         scopeLabel={scopeLabel}
+        tariff={tariff}
       />
 
       {/* ─── Main Energy chart ──────────────────────────────────── */}
@@ -749,8 +752,9 @@ function SummaryCards(props: {
   summary?: TelemetrySummary | null;
   prev?: TelemetrySummary | null;
   scopeLabel: string;
+  tariff?: { rate: number; currency: string } | null;
 }) {
-  const { summary, prev, scopeLabel } = props;
+  const { summary, prev, scopeLabel, tariff } = props;
   const delta = (cur: number | null | undefined, p: number | null | undefined) => {
     if (cur == null || p == null || p === 0) return null;
     return ((cur - p) / p) * 100;
@@ -779,10 +783,14 @@ function SummaryCards(props: {
       <SumCard
         icon={<Sigma size={20} />}
         label="ค่าไฟประมาณ"
-        value="—"
-        unit="บาท"
+        value={tariff != null && summary?.energy.delta != null
+          ? (summary.energy.delta * tariff.rate).toFixed(2)
+          : '—'}
+        unit={tariff?.currency ?? 'บาท'}
         scope={scopeLabel}
-        sub="ยังไม่ได้ตั้งค่า tariff"
+        sub={tariff != null
+          ? `อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`
+          : 'ยังไม่ได้ตั้งค่า tariff'}
       />
       <SumCard
         icon={<Zap size={20} />}

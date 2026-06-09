@@ -54,9 +54,9 @@ const SENSOR_KINDS: Record<
     family: 'KWS',
   },
   KWS_3P: {
-    label: 'KWS-AC301L (3-phase)',
+    label: 'KWS-AC306L (3-phase)',
     description: 'มิเตอร์ AC 3 เฟส ผ่าน RS485 (L1/L2/L3)',
-    model: 'KWS-AC301L 3P',
+    model: 'KWS-AC306L',
     channel: 'rs485',
     sensorType: 'power_meter',
     defaultCode: 'KWS-001',
@@ -64,11 +64,15 @@ const SENSOR_KINDS: Record<
   },
 };
 
+// detectKind: PZEM by prefix, KWS-AC306L (or anything 3-phase-y) =>
+// KWS_3P, otherwise any KWS model => KWS_1P. The 'AC306' check is the
+// authoritative signal — leave the loose 3P/THREE check in place as
+// a fallback for legacy / pre-rename rows.
 function detectKind(model: string | null | undefined): SensorKind | null {
   if (!model) return null;
   const m = model.toUpperCase();
   if (m.startsWith('PZEM')) return 'PZEM';
-  if (m.includes('3P') || m.includes('THREE')) return 'KWS_3P';
+  if (m.includes('AC306') || m.includes('3P') || m.includes('THREE')) return 'KWS_3P';
   if (m.startsWith('KWS')) return 'KWS_1P';
   return null;
 }

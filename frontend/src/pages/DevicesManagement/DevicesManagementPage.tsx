@@ -41,7 +41,7 @@ function classifySensor(model: string | null | undefined): SensorKindBadge | nul
   if (!model) return null;
   const m = model.toUpperCase();
   if (m.startsWith('PZEM')) return 'PZEM';
-  if (m.includes('3P') || m.includes('THREE')) return 'KWS-3P';
+  if (m.includes('AC306') || m.includes('3P') || m.includes('THREE')) return 'KWS-3P';
   if (m.startsWith('KWS')) return 'KWS-1P';
   return null;
 }

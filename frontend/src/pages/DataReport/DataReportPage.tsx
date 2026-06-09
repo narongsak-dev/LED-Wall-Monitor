@@ -56,7 +56,7 @@ function sensorKind(s: { model?: string | null; code?: string }): SensorKind | n
   const m = (s.model ?? '').toUpperCase();
   const c = (s.code ?? '').toUpperCase();
   if (m.includes('PZEM') || c.startsWith('PZEM')) return 'pzem';
-  if (m.includes('3P') || m.includes('THREE')) return 'kws-3p';
+  if (m.includes('AC306') || m.includes('3P') || m.includes('THREE')) return 'kws-3p';
   if (m.startsWith('KWS') || c.startsWith('KWS')) return 'kws-1p';
   return null;
 }

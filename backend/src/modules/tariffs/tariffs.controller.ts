@@ -15,9 +15,14 @@ import { UpsertTariffDto } from './dto/upsert-tariff.dto';
 export class TariffsController {
   constructor(private readonly tariffs: TariffsService) {}
 
+  // Returning JavaScript null from a NestJS handler sends an empty body,
+  // which axios then surfaces as "" (empty string) instead of null. Force
+  // the body shape to a concrete object so the client always gets valid
+  // JSON it can introspect safely.
   @Get()
-  get(@Param('siteId', ParseIntPipe) siteId: number) {
-    return this.tariffs.getForSite(BigInt(siteId));
+  async get(@Param('siteId', ParseIntPipe) siteId: number) {
+    const t = await this.tariffs.getForSite(BigInt(siteId));
+    return t ?? { rate: null, currency: null, name: null, configured: false };
   }
 
   @Put()

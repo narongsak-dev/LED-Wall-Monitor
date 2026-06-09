@@ -26,6 +26,7 @@ import {
 } from '@/features/boards/hooks';
 import { useAdminSites } from '@/features/sites/adminHooks';
 import { useZones } from '@/features/zones/hooks';
+import { ModalPicker } from '@/components/inputs/ModalPicker';
 import type {
   BoardWithSensors,
   CreateBoardPayload,
@@ -216,57 +217,38 @@ export function DevicesManagementPage() {
           />
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          <select
-            value={filterSite}
-            onChange={(e) =>
-              setFilterSite(e.target.value === 'all' ? 'all' : Number(e.target.value))
-            }
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text)',
-              padding: '9px 12px',
-              borderRadius: 8,
-              fontSize: 14,
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="all">ทุกไซต์</option>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.code} · {s.name}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <ModalPicker
+            label="ไซต์"
+            options={sites.map((s) => ({
+              value: s.id,
+              label: `${s.code} · ${s.name}`,
+              sub: s.location ?? undefined,
+            }))}
+            value={filterSite === 'all' ? null : filterSite}
+            onChange={(v) => setFilterSite(v == null ? 'all' : (v as number))}
+            allowNone={sites.length > 1}
+            noneLabel="ทุกไซต์"
+            emptyLabel="ยังไม่มีไซต์"
+            minWidth={220}
+          />
 
           {/* Zone filter — only meaningful when a specific site is selected.
               Hidden otherwise so the user isn't picking zones across sites. */}
           {filterSite !== 'all' && zones.length > 0 && (
-            <select
-              value={filterZone}
-              onChange={(e) =>
-                setFilterZone(e.target.value === 'all' ? 'all' : Number(e.target.value))
-              }
-              style={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text)',
-                padding: '9px 12px',
-                borderRadius: 8,
-                fontSize: 14,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="all">ทุกโซน</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.code} · {z.name}
-                </option>
-              ))}
-            </select>
+            <ModalPicker
+              label="โซน"
+              options={zones.map((z) => ({
+                value: z.id,
+                label: `${z.code} · ${z.name}`,
+                sub: z.description ?? undefined,
+              }))}
+              value={filterZone === 'all' ? null : filterZone}
+              onChange={(v) => setFilterZone(v == null ? 'all' : (v as number))}
+              allowNone={zones.length > 1}
+              noneLabel="ทุกโซน"
+              minWidth={200}
+            />
           )}
 
           {/* Firmware catalog — super_admin only. Lives in this header so the

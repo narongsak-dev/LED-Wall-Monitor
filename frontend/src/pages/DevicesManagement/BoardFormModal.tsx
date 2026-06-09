@@ -7,6 +7,7 @@ import type {
   UpdateBoardPayload,
 } from '@monitor/shared';
 import { useZones } from '@/features/zones/hooks';
+import { ModalPicker } from '@/components/inputs/ModalPicker';
 
 interface Props {
   open: boolean;
@@ -148,49 +149,52 @@ export function BoardFormModal({
         </div>
 
         <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Field label="ไซต์" required>
-            <select
-              value={siteId}
-              onChange={(e) => setSiteId(Number(e.target.value))}
-              style={inputStyle}
+          {/* Site picker — required, no "none" option. If only one site
+              exists ModalPicker auto-locks it (read-only chip). When
+              editing a board the picker stays read-only because we
+              don't support cross-site moves. */}
+          <div>
+            <ModalPicker
+              label="ไซต์ *"
+              options={sites.map((s) => ({
+                value: s.id,
+                label: `${s.code} · ${s.name}`,
+                sub: s.location ?? undefined,
+              }))}
+              value={typeof siteId === 'number' ? siteId : null}
+              onChange={(v) => setSiteId(v as number)}
+              emptyLabel="ยังไม่มีไซต์"
               disabled={!!editing}
-            >
-              <option value="" disabled>
-                -- เลือกไซต์ --
-              </option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code} · {s.name}
-                </option>
-              ))}
-            </select>
+              minWidth={260}
+            />
             {editing && (
               <div style={{ fontSize: 11, color: 'var(--dim2)', marginTop: 4 }}>
                 ย้ายบอร์ดข้ามไซต์ไม่ได้
               </div>
             )}
-          </Field>
+          </div>
 
-          <Field label="โซน (ถ้ามี)">
-            <select
-              value={zoneId}
-              onChange={(e) => setZoneId(e.target.value === '' ? '' : Number(e.target.value))}
-              style={inputStyle}
-              disabled={typeof siteId !== 'number' || zones.length === 0}
-            >
-              <option value="">— ไม่ระบุ —</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.code} · {z.name}
-                </option>
-              ))}
-            </select>
+          <div>
+            <ModalPicker
+              label="โซน (ถ้ามี)"
+              options={zones.map((z) => ({
+                value: z.id,
+                label: `${z.code} · ${z.name}`,
+                sub: z.description ?? undefined,
+              }))}
+              value={typeof zoneId === 'number' ? zoneId : null}
+              onChange={(v) => setZoneId(v == null ? '' : (v as number))}
+              allowNone
+              noneLabel="— ไม่ระบุ —"
+              emptyLabel="ยังไม่มีโซนในไซต์นี้"
+              minWidth={260}
+            />
             <div style={{ fontSize: 11, color: 'var(--dim2)', marginTop: 4 }}>
               {zones.length === 0
                 ? 'ไซต์นี้ยังไม่มีโซน — เพิ่มได้จากหน้ารายละเอียดไซต์'
                 : 'เลือกโซนเพื่อจัดกลุ่มบอร์ดตามตำแหน่งจริง'}
             </div>
-          </Field>
+          </div>
 
           <Field label="รหัสบอร์ด" required>
             <input

@@ -24,16 +24,20 @@ import { BoardOtaModal } from './BoardOtaModal';
 import { dayjs } from '@/lib/dayjs';
 import { showToast } from '@/lib/toast';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { useBoard } from '@/features/boards/hooks';
+import { useBoard, useDeleteBoard, useUpdateBoard } from '@/features/boards/hooks';
 import { useBoardSensors, useCreateSensor, useDeleteSensor, useUpdateSensor } from '@/features/sensors/hooks';
+import { useAdminSites } from '@/features/sites/adminHooks';
 import { useSiteRealtime } from '@/features/realtime/realtimeStore';
 import type {
+  BoardWithSensors,
   CreateSensorPayload,
   SensorWithContext,
   TelemetryPoint,
+  UpdateBoardPayload,
   UpdateSensorPayload,
 } from '@monitor/shared';
 import { SensorFormModal } from './SensorFormModal';
+import { BoardFormModal } from './BoardFormModal';
 
 export function BoardDetailPage() {
   const { boardId } = useParams();
@@ -49,11 +53,16 @@ export function BoardDetailPage() {
   const createMut = useCreateSensor();
   const updateMut = useUpdateSensor();
   const deleteMut = useDeleteSensor();
+  const updateBoardMut = useUpdateBoard();
+  const deleteBoardMut = useDeleteBoard();
+  const { data: sites = [] } = useAdminSites();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<SensorWithContext | null>(null);
   const [deletingSensor, setDeletingSensor] = useState<SensorWithContext | null>(null);
   const [otaOpen, setOtaOpen] = useState(false);
+  const [boardEditOpen, setBoardEditOpen] = useState(false);
+  const [boardDeleting, setBoardDeleting] = useState(false);
   const isSuperAdmin = useAuthStore((s) => s.user?.role === 'super_admin');
   if (isLoading) {
     return <div style={{ padding: 20, color: 'var(--dim)' }}>กำลังโหลด...</div>;
@@ -151,28 +160,56 @@ export function BoardDetailPage() {
           กลับ
         </button>
 
-        {isSuperAdmin && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
-            onClick={() => setOtaOpen(true)}
+            onClick={() => setBoardEditOpen(true)}
+            title="แก้ไขข้อมูลบอร์ด (ชื่อ / โซน / IP / ฯลฯ)"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'var(--cyan)',
-              border: 'none',
-              color: '#000',
-              padding: '8px 16px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              fontWeight: 600,
-              fontSize: 13,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text)',
+              padding: '8px 14px', borderRadius: 8,
+              cursor: 'pointer', fontFamily: 'inherit',
+              fontWeight: 600, fontSize: 13,
             }}
           >
-            <Upload size={14} />
-            อัปเดตเฟิร์มแวร์
+            <Pencil size={14} />
+            แก้ไขบอร์ด
           </button>
-        )}
+          <button
+            onClick={() => setBoardDeleting(true)}
+            title="ลบบอร์ด"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'transparent',
+              border: '1px solid var(--red)',
+              color: 'var(--red)',
+              padding: '8px 14px', borderRadius: 8,
+              cursor: 'pointer', fontFamily: 'inherit',
+              fontWeight: 600, fontSize: 13,
+            }}
+          >
+            <Trash2 size={14} />
+            ลบ
+          </button>
+          {isSuperAdmin && (
+            <button
+              onClick={() => setOtaOpen(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'var(--cyan)',
+                border: 'none', color: '#000',
+                padding: '8px 16px', borderRadius: 8,
+                cursor: 'pointer', fontFamily: 'inherit',
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              <Upload size={14} />
+              อัปเดตเฟิร์มแวร์
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Board info card */}
@@ -324,6 +361,93 @@ export function BoardDetailPage() {
         board={otaOpen ? board : null}
         onClose={() => setOtaOpen(false)}
       />
+
+      <BoardFormModal
+        open={boardEditOpen}
+        editing={board as BoardWithSensors}
+        sites={sites}
+        onClose={() => setBoardEditOpen(false)}
+        onSubmit={async (payload) => {
+          try {
+            await updateBoardMut.mutateAsync({
+              id: board.id, payload: payload as UpdateBoardPayload,
+            });
+            showToast(`อัปเดต ${board.code} เรียบร้อย`);
+            setBoardEditOpen(false);
+          } catch (err) {
+            showToast((err as Error).message ?? 'บันทึกไม่สำเร็จ', 'error');
+          }
+        }}
+        submitting={updateBoardMut.isPending}
+      />
+
+      {boardDeleting && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+            zIndex: 1000, display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={(e) => e.target === e.currentTarget && setBoardDeleting(false)}
+        >
+          <div
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 14, padding: 28, width: 420,
+              textAlign: 'center', boxShadow: 'var(--shadow-lg)',
+            }}
+          >
+            <Trash2 size={48} color="var(--red)" style={{ marginBottom: 12 }} />
+            <h3 style={{ color: 'var(--text)', marginBottom: 8 }}>
+              ยืนยันการลบบอร์ด
+            </h3>
+            <p style={{ color: 'var(--dim)', fontSize: 14 }}>
+              ลบบอร์ด <strong style={{ color: 'var(--red)' }}>{board.code}</strong>?
+              <br />
+              {sensors.length > 0 && (
+                <span style={{ color: 'var(--yellow)' }}>
+                  ⚠ ต้องลบ sensor {sensors.length} ตัวก่อน
+                </span>
+              )}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 22 }}>
+              <button
+                onClick={() => setBoardDeleting(false)}
+                style={{
+                  padding: '9px 18px',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text)',
+                  borderRadius: 8, fontWeight: 600,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >ยกเลิก</button>
+              <button
+                onClick={async () => {
+                  try {
+                    await deleteBoardMut.mutateAsync(board.id);
+                    showToast(`ลบ ${board.code} แล้ว`, 'info');
+                    navigate('/admin/devices');
+                  } catch (err) {
+                    const msg = (err as { response?: { data?: { message?: string } } })
+                      .response?.data?.message ?? 'ลบไม่สำเร็จ (อาจมี sensor ผูกอยู่)';
+                    showToast(msg, 'error');
+                    setBoardDeleting(false);
+                  }
+                }}
+                style={{
+                  padding: '9px 18px',
+                  background: 'var(--red)', border: 'none', color: '#fff',
+                  borderRadius: 8, fontWeight: 600,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >ลบเลย</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirm */}
       {deletingSensor && (

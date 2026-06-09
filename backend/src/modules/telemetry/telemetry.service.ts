@@ -9,7 +9,7 @@ import {
 interface TimeBoundary {
   from: Date;
   to: Date;
-  bucket: '1 minute' | '1 hour' | '1 day';
+  bucket: '1 minute' | '1 hour' | '1 day' | '1 month';
   source: 'telemetry' | 'telemetry_hourly' | 'telemetry_daily';
 }
 
@@ -213,20 +213,13 @@ export class TelemetryService {
     const byBucket = new Map<number, typeof rows[number]>();
     for (const r of rows) byBucket.set(r.bucket.getTime(), r);
 
-    const bucketMs = bounds.bucket === '1 minute' ? 60_000
-                   : bounds.bucket === '1 hour'   ? 3_600_000
-                   : 86_400_000;
-    // Align the first bucket DOWN to the same boundary that time_bucket()
-    // produces, so the fill timestamps exactly match the SQL ones.
-    const start = Math.floor(bounds.from.getTime() / bucketMs) * bucketMs;
-    const end   = bounds.to.getTime();
-
+    const expected = this.expectedBuckets(bounds);
     const out: Array<{
       time: string; siteId: number;
       voltage: number | null; current: number | null; power: number | null;
       energy: number | null; temperature: number | null; humidity: number | null;
     }> = [];
-    for (let ts = start; ts < end; ts += bucketMs) {
+    for (const ts of expected) {
       const r = byBucket.get(ts);
       out.push({
         time: new Date(ts).toISOString(),
@@ -239,6 +232,34 @@ export class TelemetryService {
         humidity:    r ? r.humidity    : null,
       });
     }
+    return out;
+  }
+
+  /** Generate the timestamps for every expected bucket in [from, to)
+   *  aligned the same way TimescaleDB's `time_bucket()` aligns them.
+   *  '1 month' needs calendar-aware stepping because months aren't
+   *  fixed-length; the others step by a constant millisecond delta. */
+  private expectedBuckets(bounds: TimeBoundary): number[] {
+    const endMs = bounds.to.getTime();
+    const out: number[] = [];
+
+    if (bounds.bucket === '1 month') {
+      // Align DOWN to the first UTC day of the month containing bounds.from.
+      const d = new Date(bounds.from);
+      d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
+      while (d.getTime() < endMs) {
+        out.push(d.getTime());
+        d.setUTCMonth(d.getUTCMonth() + 1);
+      }
+      return out;
+    }
+
+    const stepMs =
+      bounds.bucket === '1 minute' ? 60_000
+      : bounds.bucket === '1 hour' ? 3_600_000
+      : 86_400_000;
+    const start = Math.floor(bounds.from.getTime() / stepMs) * stepMs;
+    for (let ts = start; ts < endMs; ts += stepMs) out.push(ts);
     return out;
   }
 
@@ -458,20 +479,17 @@ export class TelemetryService {
     return new Date(localMidnight - TelemetryService.TZ_OFFSET_MIN * 60_000);
   }
 
-  /** Pick a bucket size + source table that gives a useful resolution for the
-   *  given span. Used by CUSTOM (and as a sanity backstop everywhere else):
-   *    span < 2 h   →  1 min  on raw telemetry
-   *    span < 2 d   →  5 min  on raw telemetry
-   *    span < 14 d  →  1 hour on the hourly aggregate
-   *    span < 180 d →  1 day  on the daily aggregate
-   *    otherwise    →  1 day  on the daily aggregate */
+  /** Pick a bucket size + source table that gives a useful resolution for
+   *  the given span. Used by CUSTOM. Aligns with the spec's grouping rules:
+   *    span ≤ 1 d   →  1 hour  on the hourly aggregate (24 buckets max)
+   *    span ≤ 60 d  →  1 day   on the daily aggregate
+   *    otherwise    →  1 month on the daily aggregate (rolled up SQL-side) */
   private autoBucket(spanMs: number): Pick<TimeBoundary, 'bucket' | 'source'> {
     const HOUR = 3_600_000;
     const DAY  = 86_400_000;
-    if (spanMs < 2 * HOUR)   return { bucket: '1 minute', source: 'telemetry' };
-    if (spanMs < 2 * DAY)    return { bucket: '1 minute', source: 'telemetry' };
-    if (spanMs < 14 * DAY)   return { bucket: '1 hour',   source: 'telemetry_hourly' };
-    return { bucket: '1 day', source: 'telemetry_daily' };
+    if (spanMs <= 1 * DAY + HOUR) return { bucket: '1 hour', source: 'telemetry_hourly' };
+    if (spanMs <= 60 * DAY)       return { bucket: '1 day',  source: 'telemetry_daily' };
+    return { bucket: '1 month', source: 'telemetry_daily' };
   }
 
   private resolveBounds(query: QueryTelemetryDto): TimeBoundary {
@@ -506,18 +524,22 @@ export class TelemetryService {
           source: 'telemetry',
         };
       case TimeRangeDto.D7:
+        // 7 days of daily buckets — 1 bar per day, clean DD/MM x-axis.
         return {
           from: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
           to: now,
-          bucket: '1 hour',
-          source: 'telemetry_hourly',
+          bucket: '1 day',
+          source: 'telemetry_daily',
         };
       case TimeRangeDto.MONTH:
+        // Rolling 30 days, daily buckets so the x-axis stays at one bar
+        // per day (the previous 1-hour bucket produced 720 bars labelled
+        // DD/MM repeating 24× per day — the "เบิ้ล" bug).
         return {
           from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
           to: now,
-          bucket: '1 hour',
-          source: 'telemetry_hourly',
+          bucket: '1 day',
+          source: 'telemetry_daily',
         };
       case TimeRangeDto.MONTH_CAL: {
         // First day of the current calendar month, Asia/Bangkok local time.
@@ -529,21 +551,24 @@ export class TelemetryService {
           1,
         ));
         const from = new Date(firstOfMonth.getTime() - TelemetryService.TZ_OFFSET_MIN * 60_000);
-        return { from, to: now, bucket: '1 hour', source: 'telemetry_hourly' };
+        return { from, to: now, bucket: '1 day', source: 'telemetry_daily' };
       }
       case TimeRangeDto.YEAR_CAL: {
+        // Spec says year-range views should bucket by month. We use the
+        // daily continuous aggregate as source and let time_bucket() roll
+        // it up into months SQL-side. Aligns to calendar months UTC.
         const today = this.startOfLocalDay(now);
         const localToday = new Date(today.getTime() + TelemetryService.TZ_OFFSET_MIN * 60_000);
         const firstOfYear = new Date(Date.UTC(localToday.getUTCFullYear(), 0, 1));
         const from = new Date(firstOfYear.getTime() - TelemetryService.TZ_OFFSET_MIN * 60_000);
-        return { from, to: now, bucket: '1 day', source: 'telemetry_daily' };
+        return { from, to: now, bucket: '1 month', source: 'telemetry_daily' };
       }
       case TimeRangeDto.YEAR:
       default:
         return {
           from: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000),
           to: now,
-          bucket: '1 day',
+          bucket: '1 month',
           source: 'telemetry_daily',
         };
     }

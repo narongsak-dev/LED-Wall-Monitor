@@ -899,7 +899,7 @@ function SummaryCards(props: {
           tariff at /admin/sites/:id. Without one the placeholder "ยังไม่
           ได้ตั้งค่า" used to take up a card slot without giving a useful
           number, so we just omit the card. */}
-      {tariff != null && summary?.energy.delta != null && (
+      {tariff != null && tariff.rate > 0 && summary?.energy.delta != null && (
         <SumCard
           icon={<Sigma size={20} />}
           label="ค่าไฟประมาณ"

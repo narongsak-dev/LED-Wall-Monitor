@@ -245,7 +245,11 @@ export function DashboardPage() {
   const { data: alerts = [] }     = useAlerts(id, true);
   const { data: zoneSummary = [] } = useZoneSummary(id, 'today');
   const ackMut = useAckAlert(id);
-  const costToday = energyToday != null && tariff != null
+  // Cost is only meaningful with a positive rate. Backend currently
+  // accepts rate=0 (treated as "configured but free") — guard here so a
+  // stray zero never produces a confusing "ค่าไฟ = 0.00 บาท" card.
+  const hasTariff = tariff != null && tariff.rate > 0;
+  const costToday = energyToday != null && hasTariff
     ? energyToday * tariff.rate
     : null;
 
@@ -506,13 +510,13 @@ export function DashboardPage() {
         {/* ค่าไฟ 24 ชม. — only renders when a tariff exists for this
             site (configured at /admin/sites/:id). Skipping the card
             entirely is cleaner than a "ยังไม่ได้ตั้งค่า" placeholder. */}
-        {tariff != null && costToday != null && (
+        {hasTariff && costToday != null && (
           <SummaryCard
             icon={<Sigma size={20} />}
             label="ค่าไฟ 24 ชม."
             value={costToday.toFixed(2)}
-            unit={tariff.currency}
-            sub={`อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`}
+            unit={tariff!.currency}
+            sub={`อัตรา ${tariff!.rate.toFixed(2)} ${tariff!.currency}/kWh`}
             scope={scopeLabel(zoneId, boardId, zones, boards)}
             state="fresh"
           />

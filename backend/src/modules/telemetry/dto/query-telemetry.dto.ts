@@ -16,7 +16,8 @@ export enum TimeRangeDto {
   D7 = '7d',
   MONTH = 'month',         // rolling 30 days
   MONTH_CAL = 'month_cal', // current calendar month (Asia/Bangkok)
-  LAST_3M = 'last_3m',     // rolling 3 months, daily buckets
+  LAST_60D = 'last_60d',   // rolling 60 days, daily buckets
+  LAST_90D = 'last_90d',   // rolling 90 days, daily buckets
   LAST_6M = 'last_6m',     // rolling 6 months, monthly buckets
   YEAR = 'year',           // rolling 12 months, monthly buckets
   YEAR_CAL = 'year_cal',   // current calendar year (Asia/Bangkok)

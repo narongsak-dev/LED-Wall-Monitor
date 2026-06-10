@@ -41,17 +41,30 @@ import { dayjs } from '@/lib/dayjs';
 // ────────────────────────────────────────────────────────────────
 //  Range presets
 // ────────────────────────────────────────────────────────────────
-const RANGES: Array<{ value: TimeRange; label: string; hint?: string }> = [
-  { value: 'today',     label: 'วันนี้',           hint: 'ตั้งแต่ 00:00 ถึง 24:00 ของวันนี้' },
-  { value: 'week_cal',  label: 'สัปดาห์นี้',       hint: 'จันทร์ – อาทิตย์ ของสัปดาห์นี้' },
-  { value: '7d',        label: '7 วันล่าสุด' },
-  { value: 'month_cal', label: 'เดือนนี้',         hint: 'ตั้งแต่วันที่ 1 ถึงวันสุดท้ายของเดือน' },
-  { value: 'month',     label: '30 วันล่าสุด' },
-  { value: 'last_3m',   label: '3 เดือนล่าสุด',    hint: 'group รายวัน เพื่อดูแนวโน้มละเอียด' },
-  { value: 'last_6m',   label: '6 เดือนล่าสุด',    hint: 'group รายเดือน' },
-  { value: 'year_cal',  label: 'ปีนี้',            hint: 'มกราคม – ธันวาคม ของปีนี้' },
-  { value: 'year',      label: '12 เดือนล่าสุด' },
-  { value: 'custom',    label: 'กำหนดเอง' },
+type RangeOpt = { value: TimeRange; label: string; hint?: string };
+// Grouped layout: calendar-bounded ranges, then rolling ranges, then
+// the custom escape-hatch. Visual dividers between groups in the UI.
+const RANGE_GROUPS: RangeOpt[][] = [
+  // 1) Calendar-bounded (start of period -> end of period, future is null)
+  [
+    { value: 'today',     label: 'วันนี้',     hint: 'ตั้งแต่ 00:00 ถึง 24:00 ของวันนี้' },
+    { value: 'week_cal',  label: 'สัปดาห์นี้', hint: 'จันทร์ – อาทิตย์ ของสัปดาห์นี้' },
+    { value: 'month_cal', label: 'เดือนนี้',   hint: 'ตั้งแต่วันที่ 1 ถึงวันสุดท้ายของเดือน' },
+    { value: 'year_cal',  label: 'ปีนี้',      hint: 'มกราคม – ธันวาคม ของปีนี้' },
+  ],
+  // 2) Rolling (N units back from now → now)
+  [
+    { value: '7d',       label: '7 วันล่าสุด' },
+    { value: 'month',    label: '30 วันล่าสุด' },
+    { value: 'last_60d', label: '60 วันล่าสุด', hint: 'group รายวัน' },
+    { value: 'last_90d', label: '90 วันล่าสุด', hint: 'group รายวัน' },
+    { value: 'last_6m',  label: '6 เดือนล่าสุด', hint: 'group รายเดือน' },
+    { value: 'year',     label: '12 เดือนล่าสุด' },
+  ],
+  // 3) Custom escape hatch
+  [
+    { value: 'custom',   label: 'กำหนดเอง' },
+  ],
 ];
 
 type SensorKind = 'pzem' | 'kws-1p' | 'kws-3p';
@@ -80,7 +93,8 @@ function bucketKind(range: TimeRange, customDays = 0): 'minute' | 'hour' | 'day'
     case '7d':
     case 'month':
     case 'month_cal':
-    case 'last_3m':
+    case 'last_60d':
+    case 'last_90d':
       return 'day';
     case 'last_6m':
     case 'year':
@@ -665,27 +679,44 @@ function FilterBar(props: {
       }}>
         <Filter size={13} /> ช่วงเวลา
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-        {RANGES.map((r) => {
-          const active = r.value === range;
-          return (
-            <button
-              key={r.value}
-              onClick={() => setRange(r.value)}
-              title={r.hint}
-              style={{
-                background: active ? 'var(--cyan)' : 'var(--bg-input)',
-                border: `1px solid ${active ? 'var(--cyan)' : 'var(--border-color)'}`,
-                color: active ? '#000' : 'var(--text)',
-                padding: '7px 14px', borderRadius: 8,
-                cursor: 'pointer', fontSize: 12.5,
-                fontWeight: active ? 700 : 500, fontFamily: 'inherit',
-              }}
-            >
-              {r.label}
-            </button>
-          );
-        })}
+      {/* 3 groups split by a vertical divider so the operator can scan
+          calendar-bounded vs rolling vs custom at a glance. */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+        {RANGE_GROUPS.map((group, gi) => (
+          <div key={gi} style={{ display: 'contents' }}>
+            {gi > 0 && (
+              <span
+                aria-hidden
+                style={{
+                  width: 1,
+                  alignSelf: 'stretch',
+                  background: 'var(--border-color)',
+                  margin: '0 4px',
+                }}
+              />
+            )}
+            {group.map((r) => {
+              const active = r.value === range;
+              return (
+                <button
+                  key={r.value}
+                  onClick={() => setRange(r.value)}
+                  title={r.hint}
+                  style={{
+                    background: active ? 'var(--cyan)' : 'var(--bg-input)',
+                    border: `1px solid ${active ? 'var(--cyan)' : 'var(--border-color)'}`,
+                    color: active ? '#000' : 'var(--text)',
+                    padding: '7px 14px', borderRadius: 8,
+                    cursor: 'pointer', fontSize: 12.5,
+                    fontWeight: active ? 700 : 500, fontFamily: 'inherit',
+                  }}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       {/* Filters row */}

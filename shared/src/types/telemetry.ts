@@ -14,7 +14,8 @@ export type TimeRange =
   | '7d'
   | 'month'      // rolling 30 days
   | 'month_cal'  // current calendar month (Asia/Bangkok)
-  | 'last_3m'    // rolling 3 months, daily buckets
+  | 'last_60d'   // rolling 60 days, daily buckets
+  | 'last_90d'   // rolling 90 days, daily buckets
   | 'last_6m'    // rolling 6 months, monthly buckets
   | 'year'       // rolling 12 months, monthly buckets
   | 'year_cal'   // current calendar year (Asia/Bangkok)

@@ -566,11 +566,15 @@ export class TelemetryService {
           source: 'telemetry_daily',
         };
       }
-      case TimeRangeDto.LAST_3M: {
-        // Rolling 3 months ending now. Daily buckets give a detailed
-        // trend view (~90 bars) while still fitting on a normal chart.
-        const from = new Date(now);
-        from.setUTCMonth(from.getUTCMonth() - 3);
+      case TimeRangeDto.LAST_60D: {
+        // Rolling 60 days, daily buckets.
+        const from = new Date(now.getTime() - 60 * 86_400_000);
+        return { from, to: now, bucket: '1 day', source: 'telemetry_daily' };
+      }
+      case TimeRangeDto.LAST_90D: {
+        // Rolling 90 days, daily buckets — the longest range we still
+        // bucket daily (matches the custom-range auto-bucket threshold).
+        const from = new Date(now.getTime() - 90 * 86_400_000);
         return { from, to: now, bucket: '1 day', source: 'telemetry_daily' };
       }
       case TimeRangeDto.LAST_6M: {

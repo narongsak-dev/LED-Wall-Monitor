@@ -172,8 +172,13 @@ export class TelemetryService {
     const zoneFilter = query.zoneId
       ? `AND bd.zone_id = ${BigInt(query.zoneId)}`
       : '';
+    // Daily / monthly buckets must align to Asia/Bangkok midnight, not UTC
+    // midnight, otherwise rows from 00:00-06:59 BKK fall into the previous
+    // UTC day's bucket and the chart shows "yesterday" data on today's
+    // tile. Hourly + minute buckets are unaffected (BKK = UTC+7, exact
+    // hours) but passing the timezone is harmless.
     const sql = `
-      SELECT time_bucket($1::interval, ${t}.${timeCol}) AS bucket,
+      SELECT time_bucket($1::interval, ${t}.${timeCol}, 'Asia/Bangkok') AS bucket,
              AVG(${t}.${c.v}) AS voltage,
              AVG(${t}.${c.a}) AS current,
              AVG(${t}.${c.p}) AS power,
@@ -236,28 +241,56 @@ export class TelemetryService {
   }
 
   /** Generate the timestamps for every expected bucket in [from, to)
-   *  aligned the same way TimescaleDB's `time_bucket()` aligns them.
-   *  '1 month' needs calendar-aware stepping because months aren't
-   *  fixed-length; the others step by a constant millisecond delta. */
+   *  aligned the same way TimescaleDB's `time_bucket(...,'Asia/Bangkok')`
+   *  aligns them.
+   *
+   *  For minute/hour buckets, BKK and UTC boundaries coincide (exact-hour
+   *  offset of +7), so a plain step from from.getTime() works.
+   *
+   *  For day buckets we align to Bangkok midnight (= 17:00 UTC the day
+   *  before) instead of UTC midnight. Without this the first bucket of
+   *  "เดือนนี้" was the previous month's last UTC day, because rows from
+   *  the 00:00-06:59 BKK of the 1st got grouped under the UTC bucket of
+   *  the 31st.
+   *
+   *  For month buckets we walk the calendar in Bangkok local time so the
+   *  bucket sequence starts on the 1st of the BKK month and steps by
+   *  +1 month at a time. */
   private expectedBuckets(bounds: TimeBoundary): number[] {
+    const TZ_MS = TelemetryService.TZ_OFFSET_MIN * 60_000;
     const endMs = bounds.to.getTime();
     const out: number[] = [];
 
     if (bounds.bucket === '1 month') {
-      // Align DOWN to the first UTC day of the month containing bounds.from.
-      const d = new Date(bounds.from);
-      d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
-      while (d.getTime() < endMs) {
-        out.push(d.getTime());
-        d.setUTCMonth(d.getUTCMonth() + 1);
+      // Walk the calendar in BKK local time. Start at the 1st of the BKK
+      // month containing bounds.from, step +1 month, stop at end.
+      const localFrom = new Date(bounds.from.getTime() + TZ_MS);
+      let y = localFrom.getUTCFullYear();
+      let m = localFrom.getUTCMonth();
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const bucketLocal = new Date(Date.UTC(y, m, 1));
+        const bucketUtc = bucketLocal.getTime() - TZ_MS;
+        if (bucketUtc >= endMs) break;
+        out.push(bucketUtc);
+        m += 1;
+        if (m > 11) { m = 0; y += 1; }
       }
       return out;
     }
 
-    const stepMs =
-      bounds.bucket === '1 minute' ? 60_000
-      : bounds.bucket === '1 hour' ? 3_600_000
-      : 86_400_000;
+    if (bounds.bucket === '1 day') {
+      // Align DOWN to Bangkok midnight = (utc+7h) floored to day - 7h.
+      const stepMs = 86_400_000;
+      const startLocal = Math.floor((bounds.from.getTime() + TZ_MS) / stepMs) * stepMs;
+      for (let local = startLocal; (local - TZ_MS) < endMs; local += stepMs) {
+        out.push(local - TZ_MS);
+      }
+      return out;
+    }
+
+    // Minute / hour: BKK and UTC boundaries coincide.
+    const stepMs = bounds.bucket === '1 minute' ? 60_000 : 3_600_000;
     const start = Math.floor(bounds.from.getTime() / stepMs) * stepMs;
     for (let ts = start; ts < endMs; ts += stepMs) out.push(ts);
     return out;

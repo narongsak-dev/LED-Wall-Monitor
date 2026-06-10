@@ -1037,13 +1037,12 @@ function TariffSection({ siteId }: { siteId: number }) {
     setEditing(true);
   };
   const submit = async () => {
-    // Blank input → Number("") is 0, but a 0-rate tariff is meaningless
-    // (it would silently render a "free electricity" cost card). Treat
-    // blank / non-numeric / non-positive as invalid and reject submit.
+    // Accept 0 (the toggle + render-gate handle "no cost card" cases).
+    // Reject only blank / non-numeric / negative — those are typos.
     const trimmed = rate.trim();
     const r = Number(trimmed);
-    if (trimmed === '' || !Number.isFinite(r) || r <= 0) {
-      showToast('กรอกอัตราค่าไฟเป็นตัวเลขมากกว่า 0', 'error');
+    if (trimmed === '' || !Number.isFinite(r) || r < 0) {
+      showToast('กรอกอัตราค่าไฟเป็นตัวเลขที่ไม่ติดลบ', 'error');
       return;
     }
     try {
@@ -1164,7 +1163,7 @@ function TariffSection({ siteId }: { siteId: number }) {
               ราคาต่อ kWh (บาท)
             </label>
             <input
-              type="number" step="0.01" min="0.01" value={rate}
+              type="number" step="0.01" min="0" value={rate}
               onChange={(e) => setRate(e.target.value)}
               placeholder="4.50"
               style={{

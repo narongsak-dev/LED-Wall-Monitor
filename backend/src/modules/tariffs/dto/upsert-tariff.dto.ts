@@ -2,9 +2,11 @@ import { IsBoolean, IsNumber, IsOptional, IsString, Min, MaxLength } from 'class
 
 export class UpsertTariffDto {
   @IsNumber()
-  // 0-rate tariffs are blocked here so the frontend toggle is the only
-  // way to "turn the card off" — keeping the configured rate intact.
-  @Min(0.0001)
+  // Allow 0 as a valid rate. The cost-card render already gates on
+  // `rate > 0 && enabled`, so a 0-rate row simply hides the card —
+  // exactly what an operator wants when they haven't picked a tariff
+  // yet but don't want to delete the row either.
+  @Min(0)
   rate!: number;
 
   @IsOptional()

@@ -106,11 +106,23 @@ function bucketKind(range: TimeRange, customDays = 0): 'minute' | 'hour' | 'day'
       return 'month';
   }
 }
+const THAI_DOW_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+
 function formatAxis(time: string, range: TimeRange, customDays = 0): string {
   switch (bucketKind(range, customDays)) {
     case 'minute': return dayjs(time).format('HH:mm');
     case 'hour':   return dayjs(time).format('HH:00');
-    case 'day':    return dayjs(time).format('DD/MM');
+    case 'day': {
+      const d = dayjs(time);
+      // Week-scoped views (week_cal, 7d) only have 7 bars — adding the
+      // Thai weekday short prefix doesn't crowd the axis and lets the
+      // operator see "นี่คือวันจันทร์" at a glance. Longer daily ranges
+      // (30/60/90d, month_cal) stay DD/MM to keep their dense axis clean.
+      if (range === 'week_cal' || range === '7d') {
+        return `${THAI_DOW_SHORT[d.day()]} ${d.format('DD/MM')}`;
+      }
+      return d.format('DD/MM');
+    }
     case 'month':  return dayjs(time).format('MM/YYYY');
   }
 }

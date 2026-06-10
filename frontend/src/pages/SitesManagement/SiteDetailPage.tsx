@@ -23,7 +23,11 @@ import { dayjs } from '@/lib/dayjs';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { showToast } from '@/lib/toast';
 import { useSite } from '@/features/sites/detailHooks';
-import { useAdminSites } from '@/features/sites/adminHooks';
+import {
+  useAdminSites,
+  useDeleteSite,
+  useUpdateSite,
+} from '@/features/sites/adminHooks';
 import { useRole } from '@/features/auth/roles';
 import {
   useBoards,
@@ -44,9 +48,12 @@ import type {
   Zone,
   CreateZonePayload,
   UpdateZonePayload,
+  CreateSitePayload,
+  UpdateSitePayload,
 } from '@monitor/shared';
 import { BoardFormModal } from '../DevicesManagement/BoardFormModal';
 import { ZoneFormModal } from './ZoneFormModal';
+import { SiteFormModal } from './SiteFormModal';
 
 export function SiteDetailPage() {
   const { siteId } = useParams<{ siteId: string }>();
@@ -81,6 +88,12 @@ export function SiteDetailPage() {
   const createZoneMut = useCreateZone();
   const updateZoneMut = useUpdateZone(siteIdNum);
   const deleteZoneMut = useDeleteZone(siteIdNum);
+  // Site-level edit / delete — only super-admin gets these affordances;
+  // site-admin can edit boards/zones but not the parent site itself.
+  const updateSiteMut = useUpdateSite();
+  const deleteSiteMut = useDeleteSite();
+  const [siteEditOpen, setSiteEditOpen] = useState(false);
+  const [siteDeleting, setSiteDeleting] = useState(false);
 
   const stats = useMemo(() => {
     const totalSensors = boards.reduce((acc, b) => acc + (b.sensors?.length ?? 0), 0);
@@ -153,6 +166,35 @@ export function SiteDetailPage() {
         'บันทึกไม่สำเร็จ';
       showToast(msg, 'error');
     }
+  };
+
+  const handleSiteSubmit = async (payload: CreateSitePayload | UpdateSitePayload) => {
+    if (!site) return;
+    try {
+      await updateSiteMut.mutateAsync({ id: site.id, payload });
+      showToast(`อัปเดต ${site.code} เรียบร้อย`);
+      setSiteEditOpen(false);
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } }).response?.data?.message ??
+        (err as Error).message ?? 'บันทึกไม่สำเร็จ';
+      showToast(msg, 'error');
+    }
+  };
+
+  const handleSiteDelete = async () => {
+    if (!site) return;
+    try {
+      await deleteSiteMut.mutateAsync(site.id);
+      showToast(`ลบไซต์ ${site.code} เรียบร้อย`, 'info');
+      navigate('/admin/sites');
+    } catch (err) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } }).response?.data?.message ??
+        (err as Error).message ?? 'ลบไม่สำเร็จ';
+      showToast(msg, 'error');
+    }
+    setSiteDeleting(false);
   };
 
   const handleZoneDelete = async () => {
@@ -280,6 +322,40 @@ export function SiteDetailPage() {
             <span>สร้างเมื่อ {dayjs(site.createdAt).format('DD/MM/YYYY')}</span>
           </div>
         </div>
+        {/* Site-level actions — gated to super-admin since site-admin can
+            only manage boards/zones inside the site, not the site itself. */}
+        {isSuperAdmin && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setSiteEditOpen(true)}
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text)',
+                padding: '8px 14px', borderRadius: 8,
+                fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Pencil size={14} /> แก้ไขไซต์
+            </button>
+            <button
+              onClick={() => setSiteDeleting(true)}
+              title="ลบไซต์"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border-color)',
+                color: '#ef4444',
+                padding: '8px 12px', borderRadius: 8,
+                cursor: 'pointer', fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -633,6 +709,65 @@ export function SiteDetailPage() {
         submitting={createMut.isPending || updateMut.isPending}
       />
 
+      <SiteFormModal
+        open={siteEditOpen}
+        editing={site}
+        onClose={() => setSiteEditOpen(false)}
+        onSubmit={handleSiteSubmit}
+        submitting={updateSiteMut.isPending}
+      />
+
+      {siteDeleting && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+            zIndex: 1000, display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={(e) => e.target === e.currentTarget && setSiteDeleting(false)}
+        >
+          <div
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 14, padding: 28, width: 460,
+              textAlign: 'center', boxShadow: 'var(--shadow-lg)',
+            }}
+          >
+            <Trash2 size={48} color="#ef4444" style={{ marginBottom: 12 }} />
+            <h3 style={{ color: 'var(--text)', marginBottom: 8 }}>ยืนยันการลบไซต์</h3>
+            <p style={{ color: 'var(--dim)', fontSize: 14 }}>
+              ลบไซต์ <strong style={{ color: 'var(--red)' }}>{site.code}</strong> ({site.name})?
+              <br />
+              บอร์ด, โซน, และข้อมูลที่อยู่ภายใต้ไซต์นี้จะถูกลบทั้งหมด — กู้คืนไม่ได้
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 22 }}>
+              <button
+                onClick={() => setSiteDeleting(false)}
+                style={{
+                  padding: '9px 18px',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text)', borderRadius: 8,
+                  fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >ยกเลิก</button>
+              <button
+                onClick={handleSiteDelete}
+                disabled={deleteSiteMut.isPending}
+                style={{
+                  padding: '9px 18px',
+                  background: 'var(--red)', border: 'none',
+                  color: '#fff', borderRadius: 8,
+                  fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >ลบเลย</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ZoneFormModal
         open={zoneModalOpen}
         siteId={siteIdNum}
@@ -957,7 +1092,7 @@ function TariffSection({ siteId }: { siteId: number }) {
     >
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: 12, gap: 10, flexWrap: 'wrap',
       }}>
         <h3 style={{
           margin: 0, fontSize: 14, color: 'var(--text)',
@@ -969,20 +1104,50 @@ function TariffSection({ siteId }: { siteId: number }) {
           </span>
         </h3>
         {!editing && (
-          <button
-            onClick={startEdit}
-            style={{
-              background: 'var(--bg-input)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text)',
-              padding: '7px 14px', borderRadius: 8,
-              fontSize: 12.5, fontWeight: 600,
-              cursor: 'pointer', fontFamily: 'inherit',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}
-          >
-            <Pencil size={13} /> {tariff ? 'แก้ไข' : 'ตั้งค่า'}
-          </button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {/* On/off pill — always rendered when not editing so the operator
+                can see the current state at a glance. Disabled until a rate
+                is configured (toggling a zero-rate tariff is meaningless). */}
+            <button
+              onClick={toggleEnabled}
+              disabled={upsert.isPending || !tariff || tariff.rate <= 0}
+              title={
+                !tariff || tariff.rate <= 0
+                  ? 'ตั้งค่าอัตราค่าไฟก่อนเพื่อเปิดใช้งาน'
+                  : tariff.enabled
+                    ? 'กำลังแสดงการ์ดประมาณการค่าไฟ — กดเพื่อปิด'
+                    : 'ปิดอยู่ — กดเพื่อเปิดการ์ดประมาณการค่าไฟ'
+              }
+              style={{
+                background: tariff?.enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg-input)',
+                border: `1px solid ${tariff?.enabled ? 'rgba(34,197,94,0.45)' : 'var(--border-color)'}`,
+                color: tariff?.enabled ? '#22c55e' : 'var(--dim)',
+                padding: '6px 12px', borderRadius: 999,
+                fontSize: 12, fontWeight: 700,
+                cursor: (!tariff || tariff.rate <= 0) ? 'not-allowed' : 'pointer',
+                opacity: (!tariff || tariff.rate <= 0) ? 0.6 : 1,
+                fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Power size={12} />
+              {tariff?.enabled ? 'ประมาณการค่าไฟ: เปิด' : 'ประมาณการค่าไฟ: ปิด'}
+            </button>
+            <button
+              onClick={startEdit}
+              style={{
+                background: 'var(--bg-input)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text)',
+                padding: '7px 14px', borderRadius: 8,
+                fontSize: 12.5, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Pencil size={13} /> {tariff ? 'แก้ไข' : 'ตั้งค่า'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -1072,7 +1237,7 @@ function TariffSection({ siteId }: { siteId: number }) {
           >ยกเลิก</button>
         </div>
       ) : tariff ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
           <span style={{
             fontSize: 28, fontWeight: 700, color: 'var(--text)',
             fontVariantNumeric: 'tabular-nums',
@@ -1085,29 +1250,6 @@ function TariffSection({ siteId }: { siteId: number }) {
           {tariff.name && (
             <span style={{ fontSize: 12, color: 'var(--dim)' }}>· {tariff.name}</span>
           )}
-          <button
-            onClick={toggleEnabled}
-            disabled={upsert.isPending}
-            title={tariff.enabled
-              ? 'กำลังแสดงการ์ดประมาณการค่าไฟใน Dashboard / Report — กดเพื่อปิด'
-              : 'ปิดอยู่ — กดเพื่อเปิดการ์ดประมาณการค่าไฟ'}
-            style={{
-              marginLeft: 'auto',
-              background: tariff.enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg-input)',
-              border: `1px solid ${tariff.enabled ? 'rgba(34,197,94,0.45)' : 'var(--border-color)'}`,
-              color: tariff.enabled ? '#22c55e' : 'var(--dim)',
-              padding: '6px 12px', borderRadius: 999,
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'inherit',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}
-          >
-            <span style={{
-              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-              background: tariff.enabled ? '#22c55e' : 'var(--dim)',
-            }} />
-            {tariff.enabled ? 'ประมาณการค่าไฟ: เปิด' : 'ประมาณการค่าไฟ: ปิด'}
-          </button>
         </div>
       ) : (
         <div style={{

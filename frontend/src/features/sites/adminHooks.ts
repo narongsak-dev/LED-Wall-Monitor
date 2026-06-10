@@ -17,6 +17,9 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: SITES_ADMIN_KEY });
   qc.invalidateQueries({ queryKey: ['sites', 'mine'] });
   qc.invalidateQueries({ queryKey: ['sites', 'all'] });
+  // SiteDetailPage uses ['sites','detail', id] — without this it'd keep
+  // showing the stale name/code/active-flag after an inline edit.
+  qc.invalidateQueries({ queryKey: ['sites', 'detail'] });
   qc.invalidateQueries({ queryKey: ['users', 'list'] });
   qc.invalidateQueries({ queryKey: ['boards'] });
   qc.invalidateQueries({ queryKey: ['sensors'] });

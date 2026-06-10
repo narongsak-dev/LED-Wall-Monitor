@@ -10,12 +10,15 @@ import {
 
 export enum TimeRangeDto {
   REALTIME = 'realtime',
-  TODAY = 'today',       // current calendar day (Asia/Bangkok)
+  TODAY = 'today',         // current calendar day (Asia/Bangkok)
+  WEEK_CAL = 'week_cal',   // current ISO week (Mon-Sun), Asia/Bangkok
   H24 = '24h',
   D7 = '7d',
-  MONTH = 'month',       // rolling 30 days
+  MONTH = 'month',         // rolling 30 days
   MONTH_CAL = 'month_cal', // current calendar month (Asia/Bangkok)
-  YEAR = 'year',         // rolling 365 days
+  LAST_3M = 'last_3m',     // rolling 3 months, daily buckets
+  LAST_6M = 'last_6m',     // rolling 6 months, monthly buckets
+  YEAR = 'year',           // rolling 12 months, monthly buckets
   YEAR_CAL = 'year_cal',   // current calendar year (Asia/Bangkok)
   CUSTOM = 'custom',
 }

@@ -42,11 +42,14 @@ import { dayjs } from '@/lib/dayjs';
 //  Range presets
 // ────────────────────────────────────────────────────────────────
 const RANGES: Array<{ value: TimeRange; label: string; hint?: string }> = [
-  { value: 'today',     label: 'วันนี้',           hint: 'ตั้งแต่ 00:00 ถึงปัจจุบัน' },
-  { value: '7d',        label: '7 วัน' },
-  { value: 'month_cal', label: 'เดือนนี้',         hint: 'ตั้งแต่วันที่ 1 ของเดือน' },
-  { value: 'month',     label: '30 วัน' },
-  { value: 'year_cal',  label: 'ปีนี้',            hint: 'ตั้งแต่ 1 ม.ค.' },
+  { value: 'today',     label: 'วันนี้',           hint: 'ตั้งแต่ 00:00 ถึง 24:00 ของวันนี้' },
+  { value: 'week_cal',  label: 'สัปดาห์นี้',       hint: 'จันทร์ – อาทิตย์ ของสัปดาห์นี้' },
+  { value: '7d',        label: '7 วันล่าสุด' },
+  { value: 'month_cal', label: 'เดือนนี้',         hint: 'ตั้งแต่วันที่ 1 ถึงวันสุดท้ายของเดือน' },
+  { value: 'month',     label: '30 วันล่าสุด' },
+  { value: 'last_3m',   label: '3 เดือนล่าสุด',    hint: 'group รายวัน เพื่อดูแนวโน้มละเอียด' },
+  { value: 'last_6m',   label: '6 เดือนล่าสุด',    hint: 'group รายเดือน' },
+  { value: 'year_cal',  label: 'ปีนี้',            hint: 'มกราคม – ธันวาคม ของปีนี้' },
   { value: 'year',      label: '12 เดือนล่าสุด' },
   { value: 'custom',    label: 'กำหนดเอง' },
 ];
@@ -73,16 +76,19 @@ function bucketKind(range: TimeRange, customDays = 0): 'minute' | 'hour' | 'day'
       return 'minute';
     case 'today':
       return 'hour';
+    case 'week_cal':
     case '7d':
     case 'month':
     case 'month_cal':
+    case 'last_3m':
       return 'day';
+    case 'last_6m':
     case 'year':
     case 'year_cal':
       return 'month';
     case 'custom':
-      if (customDays <= 1) return 'hour';
-      if (customDays <= 60) return 'day';
+      if (customDays <= 1)  return 'hour';
+      if (customDays <= 90) return 'day';
       return 'month';
   }
 }

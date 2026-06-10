@@ -482,13 +482,13 @@ export class TelemetryService {
   /** Pick a bucket size + source table that gives a useful resolution for
    *  the given span. Used by CUSTOM. Aligns with the spec's grouping rules:
    *    span ≤ 1 d   →  1 hour  on the hourly aggregate (24 buckets max)
-   *    span ≤ 60 d  →  1 day   on the daily aggregate
+   *    span ≤ 90 d  →  1 day   on the daily aggregate
    *    otherwise    →  1 month on the daily aggregate (rolled up SQL-side) */
   private autoBucket(spanMs: number): Pick<TimeBoundary, 'bucket' | 'source'> {
     const HOUR = 3_600_000;
     const DAY  = 86_400_000;
     if (spanMs <= 1 * DAY + HOUR) return { bucket: '1 hour', source: 'telemetry_hourly' };
-    if (spanMs <= 60 * DAY)       return { bucket: '1 day',  source: 'telemetry_daily' };
+    if (spanMs <= 90 * DAY)       return { bucket: '1 day',  source: 'telemetry_daily' };
     return { bucket: '1 month', source: 'telemetry_daily' };
   }
 
@@ -507,15 +507,46 @@ export class TelemetryService {
           bucket: '1 minute',
           source: 'telemetry',
         };
-      case TimeRangeDto.TODAY:
-        // From midnight local time (Asia/Bangkok) to now. Hour bucket gives
-        // 24 points max — a clean "energy by hour today" view.
+      case TimeRangeDto.TODAY: {
+        // Full calendar day in Asia/Bangkok. We render all 24 hour buckets
+        // even when it's only mid-day; future hours come back as null so
+        // the x-axis is always 00:00 → 23:00, not "00:00 → 14:00".
+        const start = this.startOfLocalDay(now);
         return {
-          from: this.startOfLocalDay(now),
-          to: now,
+          from: start,
+          to: new Date(start.getTime() + 86_400_000),
           bucket: '1 hour',
           source: 'telemetry_hourly',
         };
+      }
+      case TimeRangeDto.WEEK_CAL: {
+        // ISO week (Mon → Sun) in Asia/Bangkok. Daily buckets.
+        const today = this.startOfLocalDay(now);
+        const localToday = new Date(today.getTime() + TelemetryService.TZ_OFFSET_MIN * 60_000);
+        const dow = localToday.getUTCDay();      // 0 = Sun, 1 = Mon, …
+        const offsetFromMon = (dow + 6) % 7;      // Mon → 0, …, Sun → 6
+        const monday = new Date(today.getTime() - offsetFromMon * 86_400_000);
+        return {
+          from: monday,
+          to: new Date(monday.getTime() + 7 * 86_400_000),
+          bucket: '1 day',
+          source: 'telemetry_daily',
+        };
+      }
+      case TimeRangeDto.LAST_3M: {
+        // Rolling 3 months ending now. Daily buckets give a detailed
+        // trend view (~90 bars) while still fitting on a normal chart.
+        const from = new Date(now);
+        from.setUTCMonth(from.getUTCMonth() - 3);
+        return { from, to: now, bucket: '1 day', source: 'telemetry_daily' };
+      }
+      case TimeRangeDto.LAST_6M: {
+        // Rolling 6 months ending now. Monthly buckets keep the chart
+        // readable at the wider scale.
+        const from = new Date(now);
+        from.setUTCMonth(from.getUTCMonth() - 6);
+        return { from, to: now, bucket: '1 month', source: 'telemetry_daily' };
+      }
       case TimeRangeDto.H24:
         return {
           from: new Date(now.getTime() - 24 * 60 * 60 * 1000),
@@ -542,26 +573,37 @@ export class TelemetryService {
           source: 'telemetry_daily',
         };
       case TimeRangeDto.MONTH_CAL: {
-        // First day of the current calendar month, Asia/Bangkok local time.
+        // Full current calendar month, Asia/Bangkok. Daily buckets render
+        // the entire month even when partway through it (future days come
+        // back as null so the x-axis shows 1 → 30/31).
         const today = this.startOfLocalDay(now);
         const localToday = new Date(today.getTime() + TelemetryService.TZ_OFFSET_MIN * 60_000);
         const firstOfMonth = new Date(Date.UTC(
-          localToday.getUTCFullYear(),
-          localToday.getUTCMonth(),
-          1,
+          localToday.getUTCFullYear(), localToday.getUTCMonth(), 1,
         ));
-        const from = new Date(firstOfMonth.getTime() - TelemetryService.TZ_OFFSET_MIN * 60_000);
-        return { from, to: now, bucket: '1 day', source: 'telemetry_daily' };
+        const firstOfNextMonth = new Date(Date.UTC(
+          localToday.getUTCFullYear(), localToday.getUTCMonth() + 1, 1,
+        ));
+        const tzMs = TelemetryService.TZ_OFFSET_MIN * 60_000;
+        return {
+          from: new Date(firstOfMonth.getTime() - tzMs),
+          to:   new Date(firstOfNextMonth.getTime() - tzMs),
+          bucket: '1 day', source: 'telemetry_daily',
+        };
       }
       case TimeRangeDto.YEAR_CAL: {
-        // Spec says year-range views should bucket by month. We use the
-        // daily continuous aggregate as source and let time_bucket() roll
-        // it up into months SQL-side. Aligns to calendar months UTC.
+        // Full current calendar year Jan 1 → next Jan 1, Asia/Bangkok.
+        // Monthly buckets give all 12 entries even if it's only March.
         const today = this.startOfLocalDay(now);
         const localToday = new Date(today.getTime() + TelemetryService.TZ_OFFSET_MIN * 60_000);
-        const firstOfYear = new Date(Date.UTC(localToday.getUTCFullYear(), 0, 1));
-        const from = new Date(firstOfYear.getTime() - TelemetryService.TZ_OFFSET_MIN * 60_000);
-        return { from, to: now, bucket: '1 month', source: 'telemetry_daily' };
+        const firstOfYear     = new Date(Date.UTC(localToday.getUTCFullYear(),     0, 1));
+        const firstOfNextYear = new Date(Date.UTC(localToday.getUTCFullYear() + 1, 0, 1));
+        const tzMs = TelemetryService.TZ_OFFSET_MIN * 60_000;
+        return {
+          from: new Date(firstOfYear.getTime() - tzMs),
+          to:   new Date(firstOfNextYear.getTime() - tzMs),
+          bucket: '1 month', source: 'telemetry_daily',
+        };
       }
       case TimeRangeDto.YEAR:
       default:

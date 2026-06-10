@@ -9,11 +9,14 @@ export type MetricType =
 export type TimeRange =
   | 'realtime'
   | 'today'      // current calendar day (Asia/Bangkok)
+  | 'week_cal'   // current calendar week, Mon-Sun (Asia/Bangkok)
   | '24h'
   | '7d'
   | 'month'      // rolling 30 days
   | 'month_cal'  // current calendar month (Asia/Bangkok)
-  | 'year'       // rolling 365 days
+  | 'last_3m'    // rolling 3 months, daily buckets
+  | 'last_6m'    // rolling 6 months, monthly buckets
+  | 'year'       // rolling 12 months, monthly buckets
   | 'year_cal'   // current calendar year (Asia/Bangkok)
   | 'custom';
 

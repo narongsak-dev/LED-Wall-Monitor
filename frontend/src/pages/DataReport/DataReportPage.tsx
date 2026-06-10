@@ -895,18 +895,20 @@ function SummaryCards(props: {
         unit="kWh"
         scope={scopeLabel} trend={energyTrend}
       />
-      <SumCard
-        icon={<Sigma size={20} />}
-        label="ค่าไฟประมาณ"
-        value={tariff != null && summary?.energy.delta != null
-          ? (summary.energy.delta * tariff.rate).toFixed(2)
-          : '—'}
-        unit={tariff?.currency ?? 'บาท'}
-        scope={scopeLabel}
-        sub={tariff != null
-          ? `อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`
-          : 'ยังไม่ได้ตั้งค่า tariff'}
-      />
+      {/* ค่าไฟประมาณ — shown only when the operator has configured a
+          tariff at /admin/sites/:id. Without one the placeholder "ยังไม่
+          ได้ตั้งค่า" used to take up a card slot without giving a useful
+          number, so we just omit the card. */}
+      {tariff != null && summary?.energy.delta != null && (
+        <SumCard
+          icon={<Sigma size={20} />}
+          label="ค่าไฟประมาณ"
+          value={(summary.energy.delta * tariff.rate).toFixed(2)}
+          unit={tariff.currency}
+          scope={scopeLabel}
+          sub={`อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`}
+        />
+      )}
       <SumCard
         icon={<Zap size={20} />}
         label="กำลังสูงสุด"

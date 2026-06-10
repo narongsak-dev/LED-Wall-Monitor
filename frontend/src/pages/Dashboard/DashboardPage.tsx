@@ -238,8 +238,9 @@ export function DashboardPage() {
   const energyToday = summary?.energy?.delta ?? null;
   const peakPower   = summary?.power?.max ?? null;
 
-  // Phase 3 data: real tariff (for cost cards), real alerts (for the
-  // alert panel + insight derivation), real per-zone energy aggregates.
+  // Phase 3 data: live alerts + per-zone energy aggregates + optional
+  // tariff. The cost card renders only when the operator has configured
+  // a tariff at /admin/sites/:id, otherwise it's omitted entirely.
   const { data: tariff = null }   = useTariff(id);
   const { data: alerts = [] }     = useAlerts(id, true);
   const { data: zoneSummary = [] } = useZoneSummary(id, 'today');
@@ -502,17 +503,20 @@ export function DashboardPage() {
             : overallFreshness
           }
         />
-        <SummaryCard
-          icon={<Sigma size={20} />}
-          label="ค่าไฟ 24 ชม."
-          value={costToday != null ? costToday.toFixed(2) : '—'}
-          unit={tariff?.currency ?? 'บาท'}
-          sub={tariff != null
-            ? `อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`
-            : 'ยังไม่ได้ตั้งค่า tariff'}
-          scope={scopeLabel(zoneId, boardId, zones, boards)}
-          state={costToday == null ? 'never' : 'fresh'}
-        />
+        {/* ค่าไฟ 24 ชม. — only renders when a tariff exists for this
+            site (configured at /admin/sites/:id). Skipping the card
+            entirely is cleaner than a "ยังไม่ได้ตั้งค่า" placeholder. */}
+        {tariff != null && costToday != null && (
+          <SummaryCard
+            icon={<Sigma size={20} />}
+            label="ค่าไฟ 24 ชม."
+            value={costToday.toFixed(2)}
+            unit={tariff.currency}
+            sub={`อัตรา ${tariff.rate.toFixed(2)} ${tariff.currency}/kWh`}
+            scope={scopeLabel(zoneId, boardId, zones, boards)}
+            state="fresh"
+          />
+        )}
       </div>
 
       {/* ─── 4. Main 2-column section ──────────────────────────────── */}

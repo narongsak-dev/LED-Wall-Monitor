@@ -21,7 +21,8 @@ export async function fetchTariff(siteId: number): Promise<Tariff | null> {
 }
 
 export async function upsertTariff(
-  siteId: number, payload: { rate: number; currency?: string; name?: string },
+  siteId: number,
+  payload: { rate: number; currency?: string; name?: string; enabled?: boolean },
 ): Promise<Tariff> {
   const { data } = await api.put<Tariff>(`/api/sites/${siteId}/tariff`, payload);
   return data;

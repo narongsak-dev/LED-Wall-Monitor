@@ -22,7 +22,7 @@ export class TariffsController {
   @Get()
   async get(@Param('siteId', ParseIntPipe) siteId: number) {
     const t = await this.tariffs.getForSite(BigInt(siteId));
-    return t ?? { rate: null, currency: null, name: null, configured: false };
+    return t ?? { rate: null, currency: null, name: null, enabled: false, configured: false };
   }
 
   @Put()

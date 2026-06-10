@@ -881,20 +881,24 @@ const primaryBtnStyle: React.CSSProperties = {
 };
 
 // ─── Tariff section ───────────────────────────────────────────────
-// Single flat THB/kWh rate per site. The Dashboard "ค่าไฟ" card + the
-// Report "ค่าไฟประมาณ" card multiply this by the energy delta — so the
-// value here drives every cost surface in the app.
+// Single flat THB/kWh rate per site. The Dashboard "ประมาณการค่าไฟ" card +
+// the Report "ประมาณการค่าไฟ" card multiply this by the energy delta — so
+// the value here drives every cost surface in the app. The `enabled`
+// toggle lets the operator hide those cards without losing the rate.
 function TariffSection({ siteId }: { siteId: number }) {
   const { data: tariff, isLoading } = useTariff(siteId);
   const upsert = useUpsertTariff(siteId);
   const [editing, setEditing] = useState(false);
   const [rate, setRate] = useState('');
   const [name, setName] = useState('');
+  const [enabled, setEnabled] = useState(true);
 
   // Sync local form state when the underlying tariff loads / changes.
   const startEdit = () => {
     setRate(tariff?.rate?.toString() ?? '');
     setName(tariff?.name ?? '');
+    // New tariffs default to enabled; preserve existing flag on edit.
+    setEnabled(tariff?.enabled ?? true);
     setEditing(true);
   };
   const submit = async () => {
@@ -908,9 +912,33 @@ function TariffSection({ siteId }: { siteId: number }) {
       return;
     }
     try {
-      await upsert.mutateAsync({ rate: r, currency: 'THB', name: name || undefined });
+      await upsert.mutateAsync({
+        rate: r,
+        currency: 'THB',
+        name: name || undefined,
+        enabled,
+      });
       showToast('บันทึกอัตราค่าไฟแล้ว', 'success');
       setEditing(false);
+    } catch (err) {
+      showToast((err as Error).message ?? 'บันทึกไม่สำเร็จ', 'error');
+    }
+  };
+  // Quick toggle directly from read mode — no need to open the editor
+  // just to flip enabled. Reuses the existing rate/name.
+  const toggleEnabled = async () => {
+    if (!tariff || tariff.rate <= 0) return;
+    try {
+      await upsert.mutateAsync({
+        rate: tariff.rate,
+        currency: tariff.currency,
+        name: tariff.name ?? undefined,
+        enabled: !tariff.enabled,
+      });
+      showToast(
+        !tariff.enabled ? 'เปิดประมาณการค่าไฟแล้ว' : 'ปิดประมาณการค่าไฟแล้ว',
+        'success',
+      );
     } catch (err) {
       showToast((err as Error).message ?? 'บันทึกไม่สำเร็จ', 'error');
     }
@@ -1004,6 +1032,23 @@ function TariffSection({ siteId }: { siteId: number }) {
               }}
             />
           </div>
+          <label
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              fontSize: 12.5, color: 'var(--text)', fontWeight: 600,
+              padding: '8px 12px', borderRadius: 8,
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              cursor: 'pointer', userSelect: 'none',
+            }}
+          >
+            <input
+              type="checkbox" checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            แสดงประมาณการค่าไฟ
+          </label>
           <button
             onClick={submit}
             disabled={upsert.isPending}
@@ -1027,7 +1072,7 @@ function TariffSection({ siteId }: { siteId: number }) {
           >ยกเลิก</button>
         </div>
       ) : tariff ? (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <span style={{
             fontSize: 28, fontWeight: 700, color: 'var(--text)',
             fontVariantNumeric: 'tabular-nums',
@@ -1040,6 +1085,29 @@ function TariffSection({ siteId }: { siteId: number }) {
           {tariff.name && (
             <span style={{ fontSize: 12, color: 'var(--dim)' }}>· {tariff.name}</span>
           )}
+          <button
+            onClick={toggleEnabled}
+            disabled={upsert.isPending}
+            title={tariff.enabled
+              ? 'กำลังแสดงการ์ดประมาณการค่าไฟใน Dashboard / Report — กดเพื่อปิด'
+              : 'ปิดอยู่ — กดเพื่อเปิดการ์ดประมาณการค่าไฟ'}
+            style={{
+              marginLeft: 'auto',
+              background: tariff.enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg-input)',
+              border: `1px solid ${tariff.enabled ? 'rgba(34,197,94,0.45)' : 'var(--border-color)'}`,
+              color: tariff.enabled ? '#22c55e' : 'var(--dim)',
+              padding: '6px 12px', borderRadius: 999,
+              fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <span style={{
+              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+              background: tariff.enabled ? '#22c55e' : 'var(--dim)',
+            }} />
+            {tariff.enabled ? 'ประมาณการค่าไฟ: เปิด' : 'ประมาณการค่าไฟ: ปิด'}
+          </button>
         </div>
       ) : (
         <div style={{

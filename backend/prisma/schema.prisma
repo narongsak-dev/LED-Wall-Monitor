@@ -267,6 +267,10 @@ model Tariff {
   rate      Float    @db.DoublePrecision
   currency  String   @default("THB") @db.VarChar(8)
   name      String?  @db.VarChar(100)
+  // When false the cost cards on Dashboard / Report stay hidden even
+  // though the rate is configured. Lets the operator turn the feature
+  // off temporarily without deleting the rate they spent time tuning.
+  enabled   Boolean  @default(true)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt       @map("updated_at") @db.Timestamptz
 

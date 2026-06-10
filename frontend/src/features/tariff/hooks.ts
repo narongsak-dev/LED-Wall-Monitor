@@ -12,7 +12,7 @@ export function useTariff(siteId: number | null) {
 export function useUpsertTariff(siteId: number | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { rate: number; currency?: string; name?: string }) =>
+    mutationFn: (payload: { rate: number; currency?: string; name?: string; enabled?: boolean }) =>
       upsertTariff(siteId!, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tariff', siteId] }),
   });

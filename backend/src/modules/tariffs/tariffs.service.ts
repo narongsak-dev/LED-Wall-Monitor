@@ -22,10 +22,19 @@ export class TariffsService {
     if (!site) throw new NotFoundException('Site not found');
     const t = await this.prisma.tariff.upsert({
       where: { siteId },
-      update: { rate: dto.rate, currency: dto.currency ?? 'THB', name: dto.name },
+      update: {
+        rate: dto.rate,
+        currency: dto.currency ?? 'THB',
+        name: dto.name,
+        // Only overwrite enabled if the client sent it — preserves the
+        // existing flag when the operator just updates the rate.
+        ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
+      },
       create: {
         siteId, rate: dto.rate,
-        currency: dto.currency ?? 'THB', name: dto.name,
+        currency: dto.currency ?? 'THB',
+        name: dto.name,
+        enabled: dto.enabled ?? true,
       },
     });
     return this.serialize(t);
@@ -45,6 +54,7 @@ export class TariffsService {
       rate: t.rate,
       currency: t.currency,
       name: t.name,
+      enabled: t.enabled,
       updatedAt: t.updatedAt.toISOString(),
     };
   }

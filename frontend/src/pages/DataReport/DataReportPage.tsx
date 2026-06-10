@@ -867,7 +867,7 @@ function SummaryCards(props: {
   summary?: TelemetrySummary | null;
   prev?: TelemetrySummary | null;
   scopeLabel: string;
-  tariff?: { rate: number; currency: string } | null;
+  tariff?: { rate: number; currency: string; enabled: boolean } | null;
 }) {
   const { summary, prev, scopeLabel, tariff } = props;
   const delta = (cur: number | null | undefined, p: number | null | undefined) => {
@@ -895,14 +895,17 @@ function SummaryCards(props: {
         unit="kWh"
         scope={scopeLabel} trend={energyTrend}
       />
-      {/* ค่าไฟประมาณ — shown only when the operator has configured a
-          tariff at /admin/sites/:id. Without one the placeholder "ยังไม่
-          ได้ตั้งค่า" used to take up a card slot without giving a useful
-          number, so we just omit the card. */}
-      {tariff != null && tariff.rate > 0 && summary?.energy.delta != null && (
+      {/* ประมาณการค่าไฟ — rendered only when the operator has both
+          configured a positive rate AND left the feature enabled at
+          /admin/sites/:id. The toggle lets them hide this card without
+          deleting the rate. */}
+      {tariff != null
+        && tariff.rate > 0
+        && tariff.enabled === true
+        && summary?.energy.delta != null && (
         <SumCard
           icon={<Sigma size={20} />}
-          label="ค่าไฟประมาณ"
+          label="ประมาณการค่าไฟ"
           value={(summary.energy.delta * tariff.rate).toFixed(2)}
           unit={tariff.currency}
           scope={scopeLabel}

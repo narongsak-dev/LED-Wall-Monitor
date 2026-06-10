@@ -143,7 +143,6 @@ export function DataReportPage() {
   const [zoneId, setZoneId]     = useState<number | 'all'>('all');
   const [boardId, setBoardId]   = useState<number | 'all'>('all');
   const [sensorId, setSensorId] = useState<number | 'all'>('all');
-  const [kind, setKind]         = useState<SensorKind | 'all'>('all');
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [tableOpen, setTableOpen] = useState(false);
@@ -156,7 +155,6 @@ export function DataReportPage() {
   // Filter cascade — selecting Zone trims Board; selecting Board trims Sensor.
   useEffect(() => { setBoardId('all'); setSensorId('all'); }, [zoneId]);
   useEffect(() => { setSensorId('all'); }, [boardId]);
-  useEffect(() => { setSensorId('all'); }, [kind]);
 
   const boardsInScope = useMemo(
     () => boards.filter((b) =>
@@ -168,9 +166,8 @@ export function DataReportPage() {
     () => sensors
       .filter((s) => s.isActive)
       .filter((s) => zoneId === 'all'  || (s.zoneId ?? null) === zoneId)
-      .filter((s) => boardId === 'all' || Number(s.boardId) === boardId)
-      .filter((s) => kind === 'all' || sensorKind(s) === kind),
-    [sensors, zoneId, boardId, kind],
+      .filter((s) => boardId === 'all' || Number(s.boardId) === boardId),
+    [sensors, zoneId, boardId],
   );
 
   // Custom range in days (used by the bucket picker + the "X day" hint).
@@ -505,7 +502,6 @@ export function DataReportPage() {
         zones={zones} zoneId={zoneId} setZoneId={setZoneId}
         boards={boardsInScope} boardId={boardId} setBoardId={setBoardId}
         sensors={sensorsInScope} sensorId={sensorId} setSensorId={setSensorId}
-        kind={kind} setKind={setKind}
         onExport={handleExportCsv}
         onExportGrouped={handleExportGroupedCsv}
         actualRange={summary?.range}
@@ -669,7 +665,6 @@ function FilterBar(props: {
   boardId: number | 'all'; setBoardId: (v: number | 'all') => void;
   sensors: Array<{ id: number; code: string; model?: string | null }>;
   sensorId: number | 'all'; setSensorId: (v: number | 'all') => void;
-  kind: SensorKind | 'all'; setKind: (v: SensorKind | 'all') => void;
   onExport: () => void;
   onExportGrouped: () => void;
   actualRange?: { from: string; to: string };
@@ -677,7 +672,7 @@ function FilterBar(props: {
   const { range, setRange, from, setFrom, to, setTo,
           zones, zoneId, setZoneId, boards, boardId, setBoardId,
           sensors, sensorId, setSensorId,
-          kind, setKind, onExport, onExportGrouped, actualRange } = props;
+          onExport, onExportGrouped, actualRange } = props;
 
   return (
     <div
@@ -754,14 +749,6 @@ function FilterBar(props: {
           <FBSelect value={String(sensorId)} onChange={(v) => setSensorId(v === 'all' ? 'all' : Number(v))}>
             <option value="all">ทุก sensor</option>
             {sensors.map((s) => <option key={s.id} value={s.id}>{s.code}{s.model ? ` (${s.model})` : ''}</option>)}
-          </FBSelect>
-        </FBField>
-        <FBField label="ชนิด">
-          <FBSelect value={kind} onChange={(v) => setKind(v as SensorKind | 'all')}>
-            <option value="all">ทุกชนิด</option>
-            <option value="pzem">PZEM</option>
-            <option value="kws-1p">KWS 1-phase</option>
-            <option value="kws-3p">KWS 3-phase</option>
           </FBSelect>
         </FBField>
 

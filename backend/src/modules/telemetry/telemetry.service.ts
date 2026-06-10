@@ -164,6 +164,9 @@ export class TelemetryService {
     const sensorFilter = query.sensorId
       ? `AND ${t}.sensor_id = ${BigInt(query.sensorId)}`
       : '';
+    const boardFilter = query.boardId
+      ? `AND ${t}.board_id = ${BigInt(query.boardId)}`
+      : '';
     // Zone filter: join boards to get zone_id. Continuous aggregates
     // (telemetry_hourly/_daily) carry board_id so the same join works.
     const zoneJoin = query.zoneId
@@ -189,6 +192,7 @@ export class TelemetryService {
       ${zoneJoin}
       WHERE ${t}.site_id = $2 AND ${t}.${timeCol} >= $3 AND ${t}.${timeCol} < $4
         ${sensorFilter}
+        ${boardFilter}
         ${zoneFilter}
       GROUP BY bucket
       ORDER BY bucket ASC
@@ -301,6 +305,9 @@ export class TelemetryService {
     const sensorFilter = query.sensorId
       ? `AND t.sensor_id = ${BigInt(query.sensorId)}`
       : '';
+    const boardFilter = query.boardId
+      ? `AND t.board_id = ${BigInt(query.boardId)}`
+      : '';
     const zoneJoin = query.zoneId
       ? `JOIN boards bd ON bd.id = t.board_id`
       : '';
@@ -332,6 +339,7 @@ export class TelemetryService {
       WHERE t.site_id = $1
         AND t.time >= $2 AND t.time < $3
         ${sensorFilter}
+        ${boardFilter}
         ${zoneFilter}
     `;
     const result = await this.prisma.$queryRawUnsafe<Array<{
@@ -373,6 +381,7 @@ export class TelemetryService {
       WHERE t.site_id = $1
         AND t.time >= $2 AND t.time < $3
         ${sensorFilter}
+        ${boardFilter}
         ${zoneFilter}
       GROUP BY t.sensor_id
       ORDER BY t.sensor_id
@@ -412,6 +421,7 @@ export class TelemetryService {
     const where: {
       siteId: bigint;
       sensorId?: bigint;
+      boardId?: bigint;
       board?: { zoneId: bigint };
       time: { gte: Date; lt: Date };
     } = {
@@ -419,6 +429,7 @@ export class TelemetryService {
       time: { gte: bounds.from, lt: bounds.to },
     };
     if (query.sensorId != null) where.sensorId = BigInt(query.sensorId);
+    if (query.boardId != null) where.boardId = BigInt(query.boardId);
     // Zone filter via the board relation. Prisma generates a sub-query so
     // this stays a single round-trip on the count + page.
     if (query.zoneId != null) where.board = { zoneId: BigInt(query.zoneId) };

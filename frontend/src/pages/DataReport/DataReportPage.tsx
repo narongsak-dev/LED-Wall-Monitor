@@ -186,19 +186,21 @@ export function DataReportPage() {
       siteId: id, range, page, pageSize,
     };
     if (zoneId !== 'all') base.zoneId = zoneId;
+    if (boardId !== 'all') base.boardId = boardId;
     if (sensorId !== 'all') base.sensorId = sensorId;
     if (range === 'custom' && from && to) {
       base.from = new Date(from).toISOString();
       base.to = new Date(to).toISOString();
     }
     return base;
-  }, [id, range, from, to, page, pageSize, sensorId, zoneId]);
+  }, [id, range, from, to, page, pageSize, sensorId, boardId, zoneId]);
 
   const summaryQuery = useMemo<TelemetryQuery | null>(() => {
     if (!query) return null;
     return {
       siteId: query.siteId, zoneId: query.zoneId,
-      sensorId: query.sensorId, range: query.range,
+      boardId: query.boardId, sensorId: query.sensorId,
+      range: query.range,
       from: query.from, to: query.to,
     };
   }, [query]);
@@ -219,11 +221,14 @@ export function DataReportPage() {
     let cancelled = false;
     fetchTelemetrySummary({
       siteId: id, range: 'custom', from: prevFrom, to: prevTo,
-      zoneId: summaryQuery?.zoneId, sensorId: summaryQuery?.sensorId,
+      zoneId: summaryQuery?.zoneId,
+      boardId: summaryQuery?.boardId,
+      sensorId: summaryQuery?.sensorId,
     }).then((r) => { if (!cancelled) setPrevSummary(r); })
       .catch(() => { if (!cancelled) setPrevSummary(null); });
     return () => { cancelled = true; };
-  }, [summary?.range, summaryQuery?.zoneId, summaryQuery?.sensorId, id]);
+  }, [summary?.range, summaryQuery?.zoneId, summaryQuery?.boardId,
+      summaryQuery?.sensorId, id]);
 
   // ─── Scope label (shown on every card so the user always knows the
   //     slice the numbers describe) ─────────────────────────────────

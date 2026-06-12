@@ -60,6 +60,13 @@ deploy/data/
 .deploy-tmp/
 .tmp-token.txt
 
+# Ad-hoc paramiko helpers — these hardcode SSH credentials for the prod
+# host and must NEVER be committed. Treat as local-only.
+scripts/probe-*.py
+scripts/check-*.py
+scripts/install-*.py
+scripts/deploy-*.py
+
 # Workspace OS / editor cruft
 *.bak
 *.tmp

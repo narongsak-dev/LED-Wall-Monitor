@@ -216,6 +216,11 @@ model Sensor {
   name         String?     @db.VarChar(200)
   sensorType   SensorType  @default(power_meter) @map("sensor_type")
   model        String?     @db.VarChar(100)         // e.g. "PZEM-004T v3.0"
+  // Phase wiring (1 or 3). NULL = N/A (PZEM, or unknown). Drives the
+  // dashboard's per-phase breakdown grid + serves as the source of
+  // truth for KWS 1P vs 3P classification — replaces the fragile
+  // model-string substring check we had before.
+  phases       Int?        @db.SmallInt
   channel      String?     @db.VarChar(50)          // e.g. "uart2", "rs485-bus-1"
   isActive     Boolean     @default(true) @map("is_active")
 

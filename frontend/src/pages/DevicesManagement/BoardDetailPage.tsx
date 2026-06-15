@@ -785,11 +785,16 @@ function PerPhaseStrip({
   sensor,
   raw,
 }: {
-  sensor: { model?: string | null };
+  sensor: { model?: string | null; phases?: 1 | 3 | null };
   raw: unknown;
 }) {
-  const model = (sensor.model ?? '').toUpperCase();
-  const isThreePhase = model.includes('AC306') || model.includes('3P');
+  // Prefer the explicit `phases` field from admin config (the
+  // operator-set source of truth). Fall back to a model-string
+  // heuristic for legacy rows that don't have `phases` set yet.
+  const isThreePhase = sensor.phases === 3
+    || (sensor.phases == null
+        && ((sensor.model ?? '').toUpperCase().includes('AC306')
+            || (sensor.model ?? '').toUpperCase().includes('3P')));
   if (!isThreePhase) return null;
   const r = raw as Record<string, unknown> | undefined;
   if (!r) return null;

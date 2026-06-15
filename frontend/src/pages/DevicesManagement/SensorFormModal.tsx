@@ -64,14 +64,18 @@ const SENSOR_KINDS: Record<
   },
 };
 
-// detectKind: PZEM by prefix, KWS-AC306L (or anything 3-phase-y) =>
-// KWS_3P, otherwise any KWS model => KWS_1P. The 'AC306' check is the
-// authoritative signal — leave the loose 3P/THREE check in place as
-// a fallback for legacy / pre-rename rows.
-function detectKind(model: string | null | undefined): SensorKind | null {
-  if (!model) return null;
-  const m = model.toUpperCase();
+// detectKind: prefer the explicit `phases` field that the admin form
+// sets directly; fall back to a string-match on the model field for
+// legacy rows that pre-date the `phases` column.
+function detectKind(
+  s: { model?: string | null; phases?: 1 | 3 | null },
+): SensorKind | null {
+  const model = s.model;
+  const phases = s.phases;
+  const m = (model ?? '').toUpperCase();
   if (m.startsWith('PZEM')) return 'PZEM';
+  if (phases === 3) return 'KWS_3P';
+  if (phases === 1) return 'KWS_1P';
   if (m.includes('AC306') || m.includes('3P') || m.includes('THREE')) return 'KWS_3P';
   if (m.startsWith('KWS')) return 'KWS_1P';
   return null;
@@ -104,7 +108,7 @@ export function SensorFormModal({
     const set = new Set<'PZEM' | 'KWS'>();
     for (const s of existingSensors) {
       if (editing && s.id === editing.id) continue;
-      const k = detectKind(s.model);
+      const k = detectKind(s);
       if (k) set.add(SENSOR_KINDS[k].family);
     }
     return set;
@@ -122,7 +126,7 @@ export function SensorFormModal({
     if (!open) return;
     setError(null);
     if (editing) {
-      const k = detectKind(editing.model) ?? 'PZEM';
+      const k = detectKind(editing) ?? 'PZEM';
       setKind(k);
       setCode(editing.code);
       setName(editing.name ?? '');
@@ -175,12 +179,20 @@ export function SensorFormModal({
       const n = parseFloat(trimmed);
       return Number.isFinite(n) ? n : null;
     };
+    // The `phases` field is the source of truth for the per-phase
+    // dashboard. Derive directly from the chosen sensor kind so the
+    // operator never has to set it as a separate input.
+    const phases: 1 | 3 | null =
+        kind === 'KWS_3P' ? 3
+      : kind === 'KWS_1P' ? 1
+      : null;     // PZEM (and anything else) — not applicable
     const payload: CreateSensorPayload | UpdateSensorPayload = {
       boardId,
       code: code.trim(),
       name: name.trim() || undefined,
       sensorType: spec.sensorType,
       model: spec.model,
+      phases,
       channel: spec.channel,
       isActive,
       voltageMin: parseNum(vMin),
@@ -275,7 +287,7 @@ export function SensorFormModal({
                 // Disable a variant when its FAMILY is already in use on
                 // another sensor (board has at most one of each family).
                 const disabled = familyUsed
-                  && (!editing || SENSOR_KINDS[detectKind(editing.model) ?? 'PZEM'].family !== spec.family);
+                  && (!editing || SENSOR_KINDS[detectKind(editing) ?? 'PZEM'].family !== spec.family);
                 return (
                   <button
                     key={k}

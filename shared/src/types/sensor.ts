@@ -13,6 +13,8 @@ export interface Sensor {
   name: string | null;
   sensorType: SensorType;
   model: string | null;
+  /** Phase wiring (1 or 3). NULL = not applicable. */
+  phases: 1 | 3 | null;
   channel: string | null;
   isActive: boolean;
   voltageMin: number | null;
@@ -35,6 +37,7 @@ export interface CreateSensorPayload {
   name?: string;
   sensorType: SensorType;
   model?: string;
+  phases?: 1 | 3 | null;
   channel?: string;
   isActive?: boolean;
   voltageMin?: number | null;
@@ -50,6 +53,7 @@ export interface UpdateSensorPayload {
   name?: string;
   sensorType?: SensorType;
   model?: string;
+  phases?: 1 | 3 | null;
   channel?: string;
   isActive?: boolean;
   voltageMin?: number | null;

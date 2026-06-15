@@ -68,7 +68,11 @@ const RANGE_GROUPS: RangeOpt[][] = [
 ];
 
 type SensorKind = 'pzem' | 'kws-1p' | 'kws-3p';
-function sensorKind(s: { model?: string | null; code?: string }): SensorKind | null {
+function sensorKind(
+  s: { model?: string | null; code?: string; phases?: 1 | 3 | null },
+): SensorKind | null {
+  if (s.phases === 3) return 'kws-3p';
+  if (s.phases === 1) return 'kws-1p';
   const m = (s.model ?? '').toUpperCase();
   const c = (s.code ?? '').toUpperCase();
   if (m.includes('PZEM') || c.startsWith('PZEM')) return 'pzem';

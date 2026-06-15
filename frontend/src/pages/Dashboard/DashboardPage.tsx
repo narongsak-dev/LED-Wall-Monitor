@@ -78,7 +78,14 @@ function freshnessColor(f: Freshness): string {
 //  KWS three-phase. Anything unrecognised falls back to PZEM-like.
 // ────────────────────────────────────────────────────────────────
 type SensorKind = 'pzem' | 'kws-1p' | 'kws-3p' | 'unknown';
-function sensorKind(s: { model?: string | null; code?: string }): SensorKind {
+function sensorKind(
+  s: { model?: string | null; code?: string; phases?: 1 | 3 | null },
+): SensorKind {
+  // `phases` is the source of truth when the operator has set it in
+  // the admin form. Falls back to a string-match heuristic on model/
+  // code for legacy rows that pre-date the phases column.
+  if (s.phases === 3) return 'kws-3p';
+  if (s.phases === 1) return 'kws-1p';
   const m = (s.model ?? '').toUpperCase();
   const c = (s.code ?? '').toUpperCase();
   if (m.includes('PZEM') || c.startsWith('PZEM')) return 'pzem';

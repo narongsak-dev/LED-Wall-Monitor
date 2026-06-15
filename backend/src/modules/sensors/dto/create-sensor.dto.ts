@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -37,6 +38,12 @@ export class CreateSensorDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  // Phase wiring (1 or 3) for KWS-family sensors. Optional — leave
+  // unset (null) for PZEM and other non-3-phase-capable hardware.
+  @IsOptional()
+  @IsIn([1, 3, null])
+  phases?: 1 | 3 | null;
 
   @IsOptional()
   @IsString()

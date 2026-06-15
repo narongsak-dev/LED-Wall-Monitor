@@ -1524,11 +1524,13 @@ function SensorRow(props: {
           </span>
         ))}
       </div>
-      {/* Per-phase breakdown for KWS-AC306L: the row above shows
-          aggregates (V_A as the reference voltage, sum of currents,
-          meter Total power) — this grid splits them per phase so the
-          operator can spot unbalanced loads. */}
-      {kind === 'kws-3p' && isLive && latest?.raw && (
+      {/* Per-phase breakdown for any KWS sensor (1-phase or 3-phase).
+          The row above shows aggregates; this grid lists all three
+          phases — Phase A is the active one for 1-phase wiring,
+          B/C stay at zero. Operators consistently want to see all
+          three rows so an unbalanced 3-phase load is obvious at a
+          glance, instead of "did the firmware report B/C or not?". */}
+      {(kind === 'kws-1p' || kind === 'kws-3p') && isLive && latest?.raw && (
         <PerPhaseGrid raw={latest.raw} />
       )}
     </div>
@@ -1536,17 +1538,25 @@ function SensorRow(props: {
 }
 
 function PerPhaseGrid({ raw }: { raw: Record<string, unknown> }) {
+  // Older firmware (pre-v0.13.13) doesn't publish vA/vB/vC at all —
+  // skip the grid entirely in that case so we don't render "Phase A:
+  // 0/0/0" misleadingly. Once any per-phase key is present the
+  // firmware is on the new format and unwired phases legitimately
+  // report 0 from the meter.
+  const hasPerPhase =
+    raw.vA !== undefined ||
+    raw.iA !== undefined ||
+    raw.pA !== undefined;
+  if (!hasPerPhase) return null;
   const num = (k: string) => {
     const v = raw[k];
-    return typeof v === 'number' ? v : null;
+    return typeof v === 'number' ? v : 0;
   };
-  const phases: Array<{ label: string; v: number | null; i: number | null; p: number | null }> = [
+  const phases = [
     { label: 'A', v: num('vA'), i: num('iA'), p: num('pA') },
     { label: 'B', v: num('vB'), i: num('iB'), p: num('pB') },
     { label: 'C', v: num('vC'), i: num('iC'), p: num('pC') },
   ];
-  // Nothing to show if the firmware predates per-phase fields.
-  if (phases.every((p) => p.v == null && p.i == null && p.p == null)) return null;
   return (
     <div style={{
       display: 'grid',
@@ -1561,9 +1571,9 @@ function PerPhaseGrid({ raw }: { raw: Record<string, unknown> }) {
       {phases.map((p) => (
         <Fragment key={p.label}>
           <span style={{ fontWeight: 700, color: 'var(--text)' }}>{p.label}</span>
-          <span>{p.v != null ? `${p.v.toFixed(1)} V` : '—'}</span>
-          <span>{p.i != null ? `${p.i.toFixed(3)} A` : '—'}</span>
-          <span>{p.p != null ? `${p.p.toFixed(1)} W` : '—'}</span>
+          <span>{`${p.v.toFixed(1)} V`}</span>
+          <span>{`${p.i.toFixed(3)} A`}</span>
+          <span>{`${p.p.toFixed(1)} W`}</span>
         </Fragment>
       ))}
     </div>

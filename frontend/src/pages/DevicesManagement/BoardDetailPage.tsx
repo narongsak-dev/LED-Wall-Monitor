@@ -788,23 +788,30 @@ function PerPhaseStrip({
   sensor: { model?: string | null; phases?: 1 | 3 | null };
   raw: unknown;
 }) {
-  // Prefer the explicit `phases` field from admin config (the
-  // operator-set source of truth). Fall back to a model-string
-  // heuristic for legacy rows that don't have `phases` set yet.
-  const isThreePhase = sensor.phases === 3
-    || (sensor.phases == null
-        && ((sensor.model ?? '').toUpperCase().includes('AC306')
-            || (sensor.model ?? '').toUpperCase().includes('3P')));
-  if (!isThreePhase) return null;
+  // Render the per-phase strip for any KWS sensor (1-phase or
+  // 3-phase). For 1-phase wiring B/C come back as zeros — that's
+  // intentional: operators want a consistent "all three phases"
+  // layout instead of having to remember which sensors are which.
+  // PZEM and unknown families don't have per-phase data so we skip.
+  const m = (sensor.model ?? '').toUpperCase();
+  const isKws =
+    sensor.phases === 1 ||
+    sensor.phases === 3 ||
+    (sensor.phases == null && (m.includes('KWS') || m.includes('AC301') || m.includes('AC306')));
+  if (!isKws) return null;
   const r = raw as Record<string, unknown> | undefined;
   if (!r) return null;
-  const num = (k: string) => (typeof r[k] === 'number' ? (r[k] as number) : null);
+  // Skip if firmware predates per-phase fields entirely — don't render
+  // a misleading "Phase A: 0/0/0" panel for boards on old firmware.
+  const hasPerPhase =
+    r.vA !== undefined || r.iA !== undefined || r.pA !== undefined;
+  if (!hasPerPhase) return null;
+  const num = (k: string) => (typeof r[k] === 'number' ? (r[k] as number) : 0);
   const phases = [
     { label: 'A', v: num('vA'), i: num('iA'), p: num('pA') },
     { label: 'B', v: num('vB'), i: num('iB'), p: num('pB') },
     { label: 'C', v: num('vC'), i: num('iC'), p: num('pC') },
   ];
-  if (phases.every((p) => p.v == null && p.i == null && p.p == null)) return null;
   return (
     <div
       style={{
@@ -837,9 +844,9 @@ function PerPhaseStrip({
         {phases.map((p) => (
           <Fragment key={p.label}>
             <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>{p.label}</span>
-            <span>{p.v != null ? p.v.toFixed(1) : '—'}</span>
-            <span>{p.i != null ? p.i.toFixed(3) : '—'}</span>
-            <span>{p.p != null ? p.p.toFixed(1) : '—'}</span>
+            <span>{p.v.toFixed(1)}</span>
+            <span>{p.i.toFixed(3)}</span>
+            <span>{p.p.toFixed(1)}</span>
           </Fragment>
         ))}
       </div>

@@ -83,28 +83,35 @@ bool tqBegin() {
     Serial.println("LittleFS: mount failed");
     return false;
   }
+  // Bump this whenever we change the on-disk record layout (struct
+  // fields added/removed/reordered). Firmware that boots with a
+  // saved generation different from this current value wipes the
+  // file. Generations: 1 = pre-per-phase (64 B), 2 = with per-phase
+  // KWS V/I/P (100 B).
+  const uint32_t CURRENT_FMT_GEN = 2;
+
   g_tqNvs.begin("tqueue", true);
   g_readOffset = g_tqNvs.getUInt("readOff", 0);
-  uint32_t savedRecSize = g_tqNvs.getUInt("recSize", 0);
+  uint32_t savedFmtGen = g_tqNvs.getUInt("fmtGen", 0);
   g_tqNvs.end();
-  // If the record format changed between firmware versions, the queue
-  // file on disk holds a different layout than what we'd parse. Wipe
-  // the file rather than emit garbage telemetry — losing buffered
-  // records on a one-time firmware upgrade is acceptable.
-  if (savedRecSize != 0 && savedRecSize != REC_SIZE) {
-    Serial.printf("Queue: record size changed %u → %u — wiping file\n",
-                  (unsigned)savedRecSize, (unsigned)REC_SIZE);
+  // Wipe on ANY mismatch — including the first boot of a firmware
+  // that has fmtGen set (savedFmtGen == 0). Previous incarnation of
+  // this check (`saved != 0 && saved != REC_SIZE`) missed the very
+  // first upgrade, so the old 64-byte records leaked into a 100-byte
+  // reader and emitted garbage telemetry.
+  if (savedFmtGen != CURRENT_FMT_GEN) {
+    Serial.printf("Queue: format generation %u → %u — wiping file\n",
+                  (unsigned)savedFmtGen, (unsigned)CURRENT_FMT_GEN);
     LittleFS.remove(QUEUE_PATH);
     g_readOffset = 0;
   }
-  // Persist the current record size so the next boot can detect a
-  // future format bump.
+  // Persist the current generation so future boots take the fast path.
   g_tqNvs.begin("tqueue", false);
-  g_tqNvs.putUInt("recSize", (uint32_t)REC_SIZE);
+  g_tqNvs.putUInt("fmtGen", CURRENT_FMT_GEN);
   g_tqNvs.putUInt("readOff", g_readOffset);
   g_tqNvs.end();
-  Serial.printf("Queue: file=%u B recSize=%u readOff=%u pending=%u\n",
-                (unsigned)tqFileBytes(), (unsigned)REC_SIZE,
+  Serial.printf("Queue: file=%u B fmtGen=%u readOff=%u pending=%u\n",
+                (unsigned)tqFileBytes(), (unsigned)CURRENT_FMT_GEN,
                 (unsigned)g_readOffset, (unsigned)tqPending());
   return true;
 }

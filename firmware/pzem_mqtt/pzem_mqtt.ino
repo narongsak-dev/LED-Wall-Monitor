@@ -49,7 +49,7 @@ struct KwsReading {
 
 // Firmware version is the only truly static "config" — everything else lives
 // in NVS so it can be edited from the AP-mode setup portal.
-const char* FIRMWARE_VERSION  = "v0.13.13";
+const char* FIRMWARE_VERSION  = "v0.13.14";
 
 const uint32_t PUBLISH_INTERVAL_MS = 3000;
 const uint32_t WDT_TIMEOUT_S       = 30;

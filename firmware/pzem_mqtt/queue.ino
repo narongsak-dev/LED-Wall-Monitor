@@ -85,10 +85,27 @@ bool tqBegin() {
   }
   g_tqNvs.begin("tqueue", true);
   g_readOffset = g_tqNvs.getUInt("readOff", 0);
+  uint32_t savedRecSize = g_tqNvs.getUInt("recSize", 0);
   g_tqNvs.end();
-  Serial.printf("Queue: file=%u B readOff=%u pending=%u\n",
-                (unsigned)tqFileBytes(), (unsigned)g_readOffset,
-                (unsigned)tqPending());
+  // If the record format changed between firmware versions, the queue
+  // file on disk holds a different layout than what we'd parse. Wipe
+  // the file rather than emit garbage telemetry — losing buffered
+  // records on a one-time firmware upgrade is acceptable.
+  if (savedRecSize != 0 && savedRecSize != REC_SIZE) {
+    Serial.printf("Queue: record size changed %u → %u — wiping file\n",
+                  (unsigned)savedRecSize, (unsigned)REC_SIZE);
+    LittleFS.remove(QUEUE_PATH);
+    g_readOffset = 0;
+  }
+  // Persist the current record size so the next boot can detect a
+  // future format bump.
+  g_tqNvs.begin("tqueue", false);
+  g_tqNvs.putUInt("recSize", (uint32_t)REC_SIZE);
+  g_tqNvs.putUInt("readOff", g_readOffset);
+  g_tqNvs.end();
+  Serial.printf("Queue: file=%u B recSize=%u readOff=%u pending=%u\n",
+                (unsigned)tqFileBytes(), (unsigned)REC_SIZE,
+                (unsigned)g_readOffset, (unsigned)tqPending());
   return true;
 }
 

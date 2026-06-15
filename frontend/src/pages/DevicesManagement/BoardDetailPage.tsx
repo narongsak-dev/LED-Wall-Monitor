@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -703,6 +703,12 @@ function SensorCard({
         )}
       </div>
 
+      {/* Per-phase breakdown for KWS-AC306L 3-phase sensors. The main
+          grid above shows aggregates (V_A as the reference, sum of
+          currents, meter Total power); this strip splits them per
+          phase so an unbalanced load is visible at a glance. */}
+      <PerPhaseStrip sensor={sensor} raw={reading?.raw} />
+
       {/* Peak Limit (per-sensor thresholds) */}
       {(sensor.voltageMin != null ||
         sensor.voltageMax != null ||
@@ -766,6 +772,71 @@ function SensorCard({
         {reading && (reading.raw as Record<string, number> | undefined)?.pf != null && (
           <span>PF: {(reading.raw as Record<string, number>).pf.toFixed(2)}</span>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Only render anything when the sensor identifies as KWS 3-phase
+// (model contains AC306) AND the firmware has supplied per-phase
+// values in the raw payload. Otherwise this returns null and the
+// surrounding layout collapses cleanly.
+function PerPhaseStrip({
+  sensor,
+  raw,
+}: {
+  sensor: { model?: string | null };
+  raw: unknown;
+}) {
+  const model = (sensor.model ?? '').toUpperCase();
+  const isThreePhase = model.includes('AC306') || model.includes('3P');
+  if (!isThreePhase) return null;
+  const r = raw as Record<string, unknown> | undefined;
+  if (!r) return null;
+  const num = (k: string) => (typeof r[k] === 'number' ? (r[k] as number) : null);
+  const phases = [
+    { label: 'A', v: num('vA'), i: num('iA'), p: num('pA') },
+    { label: 'B', v: num('vB'), i: num('iB'), p: num('pB') },
+    { label: 'C', v: num('vC'), i: num('iC'), p: num('pC') },
+  ];
+  if (phases.every((p) => p.v == null && p.i == null && p.p == null)) return null;
+  return (
+    <div
+      style={{
+        marginTop: 2,
+        marginBottom: 12,
+        padding: '10px 12px',
+        background: 'var(--bg-input)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 8,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      <div style={{
+        fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em',
+        color: 'var(--dim2)', textTransform: 'uppercase', marginBottom: 6,
+      }}>
+        Per-phase
+      </div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '24px 1fr 1fr 1fr',
+        gap: '4px 14px',
+        fontSize: 12,
+        color: 'var(--text)',
+      }}>
+        <span style={{ color: 'var(--dim)', fontWeight: 600 }} />
+        <span style={{ color: 'var(--dim)', fontWeight: 600 }}>V</span>
+        <span style={{ color: 'var(--dim)', fontWeight: 600 }}>A</span>
+        <span style={{ color: 'var(--dim)', fontWeight: 600 }}>W</span>
+        {phases.map((p) => (
+          <Fragment key={p.label}>
+            <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>{p.label}</span>
+            <span>{p.v != null ? p.v.toFixed(1) : '—'}</span>
+            <span>{p.i != null ? p.i.toFixed(3) : '—'}</span>
+            <span>{p.p != null ? p.p.toFixed(1) : '—'}</span>
+          </Fragment>
+        ))}
       </div>
     </div>
   );

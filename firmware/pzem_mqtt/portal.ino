@@ -34,6 +34,7 @@ static void applyDefaults() {
   strlcpy(cfg.sensorPzemCode, "PZEM-001",  sizeof(cfg.sensorPzemCode));
   strlcpy(cfg.sensorKwsCode,  "KWS-001",   sizeof(cfg.sensorKwsCode));
   cfg.kwsSlaveAddr = 2;
+  cfg.kwsPhases    = 1;
   strlcpy(cfg.ipMode, "dhcp", sizeof(cfg.ipMode));
   cfg.staticIp[0]      = '\0';
   cfg.staticGateway[0] = '\0';
@@ -48,17 +49,36 @@ static void applyDefaults() {
 void loadConfig() {
   gPrefs.begin("led-monitor", true);            // read-only
   size_t got = gPrefs.getBytesLength("cfg");
-  if (got == sizeof(cfg)) {
-    gPrefs.getBytes("cfg", &cfg, sizeof(cfg));
+  // Accept any blob up to the current struct size: equal means a
+  // matching-version save, smaller means a previous firmware that
+  // didn't have the latest trailing fields yet. We memset first so any
+  // missing trailing bytes zero-init (e.g. a newly-added `bool` field
+  // ends up false, a `uint8_t` ends up 0, etc.). The magic check below
+  // still kicks in for genuinely-uninitialised NVS / corrupted blobs.
+  // We reject blobs larger than the current struct outright — those
+  // would imply a downgrade that drops fields, which would put garbage
+  // in the saved magic word.
+  bool sizeOk = (got > 0 && got <= sizeof(cfg));
+  if (sizeOk) {
+    memset(&cfg, 0, sizeof(cfg));
+    gPrefs.getBytes("cfg", &cfg, got);
   }
   gPrefs.end();
-  if (got != sizeof(cfg) || cfg.magic != CONFIG_MAGIC) {
-    Serial.println("Config: first boot or schema bump - applying defaults");
+  if (!sizeOk || cfg.magic != CONFIG_MAGIC) {
+    Serial.printf("Config: first boot or schema bump (got=%u expected<=%u magic=%08x) - applying defaults\n",
+                  (unsigned)got, (unsigned)sizeof(cfg), (unsigned)cfg.magic);
     applyDefaults();
     saveConfig();
   } else {
-    Serial.printf("Config: loaded board=%s site=%s mqtt=%s:%u\n",
-                  cfg.boardCode, cfg.siteCode, cfg.mqttHost, cfg.mqttPort);
+    Serial.printf("Config: loaded board=%s site=%s mqtt=%s:%u (blob=%u struct=%u)\n",
+                  cfg.boardCode, cfg.siteCode, cfg.mqttHost, cfg.mqttPort,
+                  (unsigned)got, (unsigned)sizeof(cfg));
+    if (got < sizeof(cfg)) {
+      // Trailing fields just got zero-init from the memset above. Persist
+      // the (now-bigger) blob so the next boot reads it the fast path
+      // without this branch firing again.
+      saveConfig();
+    }
   }
 }
 
@@ -164,6 +184,14 @@ button.ghost:hover{background:#2a3850}
       <div class="row">
         <div><label>PZEM sensor code</label><input name="sensorPzemCode" value="%PZEM_CODE%" maxlength="23"></div>
         <div><label>KWS sensor code</label><input name="sensorKwsCode" value="%KWS_CODE%" maxlength="23"></div>
+      </div>
+      <div class="row">
+        <div><label>KWS phases</label>
+          <select name="kwsPhases">
+            <option value="1" %KWS_1P_SEL%>1-phase (KWS-AC301L)</option>
+            <option value="3" %KWS_3P_SEL%>3-phase (KWS-AC306L)</option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="section"><h2>WiFi &amp; Network</h2>
@@ -423,6 +451,11 @@ String renderConfigForm(const char* saveUrl, const char* rebootUrl, const char* 
   html.replace("%PZEM_CODE%",      htmlEscape(cfg.sensorPzemCode));
   html.replace("%KWS_CODE%",       htmlEscape(cfg.sensorKwsCode));
   html.replace("%KWS_SLAVE%",      String(cfg.kwsSlaveAddr));
+  // kwsPhases defaults to 1 if NVS held an older blob without the field
+  // (a fresh zero-init), so the 1-phase option is the implicit fallback.
+  bool kws3 = (cfg.kwsPhases == 3);
+  html.replace("%KWS_1P_SEL%",     kws3 ? "" : "selected");
+  html.replace("%KWS_3P_SEL%",     kws3 ? "selected" : "");
   bool isStatic = strcmp(cfg.ipMode, "static") == 0;
   html.replace("%DHCP_SEL%",       isStatic ? "" : "selected");
   html.replace("%STATIC_SEL%",     isStatic ? "selected" : "");
@@ -486,6 +519,10 @@ bool applyConfigFromJson(const char* json, String& err) {
   copyField(doc, "sensorPzemCode", cfg.sensorPzemCode, sizeof(cfg.sensorPzemCode));
   copyField(doc, "sensorKwsCode",  cfg.sensorKwsCode,  sizeof(cfg.sensorKwsCode));
   if (doc.containsKey("kwsSlaveAddr")) cfg.kwsSlaveAddr = doc["kwsSlaveAddr"].as<uint8_t>();
+  if (doc.containsKey("kwsPhases")) {
+    uint8_t p = doc["kwsPhases"].as<uint8_t>();
+    cfg.kwsPhases = (p == 3) ? 3 : 1;       // only 1 or 3 are valid
+  }
   copyField(doc, "ipMode",         cfg.ipMode,         sizeof(cfg.ipMode));
   copyField(doc, "staticIp",       cfg.staticIp,       sizeof(cfg.staticIp));
   copyField(doc, "staticGateway",  cfg.staticGateway,  sizeof(cfg.staticGateway));

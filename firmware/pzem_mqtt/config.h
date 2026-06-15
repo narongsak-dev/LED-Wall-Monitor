@@ -32,6 +32,12 @@ struct Config {
   char    sensorPzemCode[24];
   char    sensorKwsCode[24];
   uint8_t kwsSlaveAddr;
+  // Phase wiring of the KWS meter. 1 = single-phase (KWS-AC301L, the
+  // original supported model). 3 = three-phase (KWS-AC306L/306L,
+  // different register map + scale + word order). New field appended
+  // to the struct so existing NVS blobs still load — a value of 0
+  // (uninitialised) is treated as 1-phase by the reader.
+  uint8_t kwsPhases;
 
   // Network: DHCP (default) or static IP. Static applies to whichever
   // transport is active (Ethernet preferred, WiFi fallback).

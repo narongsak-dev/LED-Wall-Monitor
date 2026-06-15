@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import {
@@ -1517,6 +1517,48 @@ function SensorRow(props: {
           </span>
         ))}
       </div>
+      {/* Per-phase breakdown for KWS-AC306L: the row above shows
+          aggregates (V_A as the reference voltage, sum of currents,
+          meter Total power) — this grid splits them per phase so the
+          operator can spot unbalanced loads. */}
+      {kind === 'kws-3p' && isLive && latest?.raw && (
+        <PerPhaseGrid raw={latest.raw} />
+      )}
+    </div>
+  );
+}
+
+function PerPhaseGrid({ raw }: { raw: Record<string, unknown> }) {
+  const num = (k: string) => {
+    const v = raw[k];
+    return typeof v === 'number' ? v : null;
+  };
+  const phases: Array<{ label: string; v: number | null; i: number | null; p: number | null }> = [
+    { label: 'A', v: num('vA'), i: num('iA'), p: num('pA') },
+    { label: 'B', v: num('vB'), i: num('iB'), p: num('pB') },
+    { label: 'C', v: num('vC'), i: num('iC'), p: num('pC') },
+  ];
+  // Nothing to show if the firmware predates per-phase fields.
+  if (phases.every((p) => p.v == null && p.i == null && p.p == null)) return null;
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '14px 1fr 1fr 1fr',
+      gap: '2px 8px',
+      fontSize: 10.5,
+      fontVariantNumeric: 'tabular-nums',
+      marginTop: 4,
+      paddingLeft: 4,
+      color: 'var(--dim)',
+    }}>
+      {phases.map((p) => (
+        <Fragment key={p.label}>
+          <span style={{ fontWeight: 700, color: 'var(--text)' }}>{p.label}</span>
+          <span>{p.v != null ? `${p.v.toFixed(1)} V` : '—'}</span>
+          <span>{p.i != null ? `${p.i.toFixed(3)} A` : '—'}</span>
+          <span>{p.p != null ? `${p.p.toFixed(1)} W` : '—'}</span>
+        </Fragment>
+      ))}
     </div>
   );
 }

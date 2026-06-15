@@ -14,7 +14,7 @@ param(
 $cli = 'C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe'
 
 Write-Host ('Uploading ' + $Sketch + ' -> ' + $BoardIp + ' via OTA...') -ForegroundColor Cyan
-& $cli compile --upload --port $BoardIp --fqbn 'esp32:esp32:esp32:FlashSize=16M' $Sketch
+& $cli compile --upload --port $BoardIp --fqbn 'esp32:esp32:esp32:FlashSize=16M,PartitionScheme=custom' $Sketch
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host 'OTA upload succeeded. Board will restart with new firmware.' -ForegroundColor Green

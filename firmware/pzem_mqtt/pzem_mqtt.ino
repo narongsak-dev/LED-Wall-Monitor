@@ -35,12 +35,21 @@
 
 struct KwsReading {
   bool ok;
+  // Aggregates (per the existing single-phase contract). For AC306L:
+  // voltage = V_A (Phase A as the reference); current = I_A + I_B + I_C;
+  // power = meter-internal Total (register 0x0017), energy = meter
+  // Total (0x0034). For AC301L, the per-phase fields are zero and
+  // voltage/current/power carry the single-phase reading directly.
   float voltage, current, power, energy, frequency, pf, temperature;
+  // Per-phase breakdown (KWS-306L only; AC301L leaves these at zero).
+  float vA, vB, vC;
+  float iA, iB, iC;
+  float pA, pB, pC;
 };
 
 // Firmware version is the only truly static "config" — everything else lives
 // in NVS so it can be edited from the AP-mode setup portal.
-const char* FIRMWARE_VERSION  = "v0.13.6";
+const char* FIRMWARE_VERSION  = "v0.13.13";
 
 const uint32_t PUBLISH_INTERVAL_MS = 3000;
 const uint32_t WDT_TIMEOUT_S       = 30;
@@ -258,7 +267,11 @@ SharedReading shared{};
 SemaphoreHandle_t sharedMtx;
 
 // ─── Helpers ────────────────────────────────────────────────────────
-KwsReading readKws() {
+
+// AC301L single-phase reader (the original implementation). Register
+// map: V at 0x000E ÷10, I+P at 0x000F-0x0012 (LOW word first), E at
+// 0x0017 ÷1000, temp/pf/freq at 0x001A/0x001D/0x001E.
+static KwsReading readKwsAc301L() {
   KwsReading r{};
   uint8_t result = kws.readHoldingRegisters(0x000E, 5);
   if (result != kws.ku8MBSuccess) {
@@ -281,8 +294,125 @@ KwsReading readKws() {
   r.temperature = tRaw;
   r.pf          = kws.getResponseBuffer(6) / 100.0f;
   r.frequency   = kws.getResponseBuffer(7) / 10.0f;
+  // Mirror single-phase reading into the Phase-A slot so downstream
+  // consumers can ignore the AC301L vs AC306L distinction.
+  r.vA = r.voltage;
+  r.iA = r.current;
+  r.pA = r.power;
   r.ok = true;
   return r;
+}
+
+// AC306L 3-phase reader. Differences from AC301L worth flagging:
+//   - Voltage scale is ÷100 (vs ÷10 on AC301L)
+//   - 32-bit values are HIGH word first (vs LOW first on AC301L)
+//   - V/I/P broken out per phase, plus total power/energy at dedicated
+//     registers (0x0017 power, 0x0034 energy)
+//   - Energy scale is ÷100 (vs ÷1000 on AC301L)
+//   - Temperature lives at 0x003C, not 0x001A
+// We collapse the 3-phase reading into the single-phase KwsReading
+// struct: V uses Phase A (typical wiring + matches what the AC301L
+// would have reported at the same physical install), I = sum of
+// phases, P/E = meter-internal totals. Per-phase values are available
+// for later expansion into the MQTT raw payload but aren't published
+// yet — the backend ingestion path doesn't know about them.
+static KwsReading readKwsAc306L() {
+  KwsReading r{};
+  // Use the SAME request pattern as the AC301L reader (5 words at
+  // 0x000E + 8 words at 0x0017) — proven to elicit a response from
+  // this meter under live wiring. Just reinterpret the bytes per the
+  // AC306L semantic:
+  //
+  //   Read 1 — 5 words at 0x000E:
+  //     [0] V_A (÷100)   [1] V_B   [2] V_C
+  //     [3] I_A_hi       [4] I_A_lo   →  I_A = (hi<<16|lo) ÷ 1000
+  //
+  //   Read 2 — 8 words at 0x0017:
+  //     [0..1] P_total (÷10, HIGH first)
+  //     [2..3] P_A      [4..5] P_B      [6..7] P_C
+  //
+  // Per-phase B/C currents (0x0013..0x0016), total energy (0x0034),
+  // PF / freq (0x002F-0x0033) and temperature (0x003C) sit outside
+  // these two blocks. Earlier attempts to add extra Modbus reads broke
+  // the meter (it stopped responding to ANY frame for a while). Keep
+  // the request count identical to AC301L — that's the safe envelope.
+  uint8_t result = kws.readHoldingRegisters(0x000E, 5);
+  if (result != kws.ku8MBSuccess) { r.ok = false; return r; }
+  r.vA = kws.getResponseBuffer(0) / 100.0f;
+  r.vB = kws.getResponseBuffer(1) / 100.0f;
+  r.vC = kws.getResponseBuffer(2) / 100.0f;
+  uint32_t iA_raw = ((uint32_t)kws.getResponseBuffer(3) << 16) | kws.getResponseBuffer(4);
+  r.iA = iA_raw / 1000.0f;
+
+  // I_B + I_C at 0x0013..0x0016 — 4 words (2 × U32 HIGH first).
+  delay(20);
+  result = kws.readHoldingRegisters(0x0013, 4);
+  if (result == kws.ku8MBSuccess) {
+    uint32_t iB_raw = ((uint32_t)kws.getResponseBuffer(0) << 16) | kws.getResponseBuffer(1);
+    uint32_t iC_raw = ((uint32_t)kws.getResponseBuffer(2) << 16) | kws.getResponseBuffer(3);
+    r.iB = iB_raw / 1000.0f;
+    r.iC = iC_raw / 1000.0f;
+  }
+
+  delay(20);
+  result = kws.readHoldingRegisters(0x0017, 8);
+  if (result != kws.ku8MBSuccess) {
+    // Got V/I from the first block — surface what we have rather than
+    // dropping the whole read on the floor.
+    r.voltage = r.vA;
+    r.current = r.iA + r.iB + r.iC;
+    r.ok = true;
+    return r;
+  }
+  uint32_t pTot_raw = ((uint32_t)kws.getResponseBuffer(0) << 16) | kws.getResponseBuffer(1);
+  uint32_t pA_raw   = ((uint32_t)kws.getResponseBuffer(2) << 16) | kws.getResponseBuffer(3);
+  uint32_t pB_raw   = ((uint32_t)kws.getResponseBuffer(4) << 16) | kws.getResponseBuffer(5);
+  uint32_t pC_raw   = ((uint32_t)kws.getResponseBuffer(6) << 16) | kws.getResponseBuffer(7);
+  r.pA = pA_raw / 10.0f;
+  r.pB = pB_raw / 10.0f;
+  r.pC = pC_raw / 10.0f;
+
+  r.voltage = r.vA;                          // Phase A as the reference
+  r.current = r.iA + r.iB + r.iC;            // sum of phases
+  r.power   = pTot_raw / 10.0f;              // meter-internal Total
+  r.ok = true;
+
+  // ── Optional tail reads (PF / freq, energy, temperature) ──
+  // These three sit outside the proven 0x000E + 0x0017 blocks. Earlier
+  // attempts piled six reads back-to-back and the meter stopped
+  // responding to ANY frame for tens of seconds. So we keep the
+  // request count small (3 extra), space them out with brief delays,
+  // and treat failures as "skip this field, keep going" — never reset
+  // r.ok to false based on these. The basic V/I/P numbers above are
+  // the load-bearing part of the reading.
+  delay(20);
+  result = kws.readHoldingRegisters(0x002F, 5);   // PF_total..Freq
+  if (result == kws.ku8MBSuccess) {
+    r.pf        = kws.getResponseBuffer(0) / 1000.0f;
+    r.frequency = kws.getResponseBuffer(4) / 100.0f;
+  }
+
+  delay(20);
+  result = kws.readHoldingRegisters(0x0034, 2);   // Total energy
+  if (result == kws.ku8MBSuccess) {
+    uint32_t e_raw = ((uint32_t)kws.getResponseBuffer(0) << 16) | kws.getResponseBuffer(1);
+    r.energy = e_raw / 100.0f;
+  }
+
+  delay(20);
+  result = kws.readHoldingRegisters(0x003C, 1);   // Temperature
+  if (result == kws.ku8MBSuccess) {
+    r.temperature = (int16_t)kws.getResponseBuffer(0);
+  }
+
+  return r;
+}
+
+KwsReading readKws() {
+  // Branch on the explicit phase setting from config. Default to
+  // 1-phase if NVS held an older blob without the field (cfg.kwsPhases
+  // zero-inits to 0, which we treat as 1-phase too).
+  return (cfg.kwsPhases == 3) ? readKwsAc306L() : readKwsAc301L();
 }
 
 void connectWiFi() {
@@ -431,6 +561,9 @@ void buildRecord(TelemetryRecord& r) {
     r.kwsP = shared.kws.power;   r.kwsE = shared.kws.energy;
     r.kwsPF = shared.kws.pf;     r.kwsFreq = shared.kws.frequency;
     r.kwsTemp = shared.kws.temperature;
+    r.kwsVa = shared.kws.vA; r.kwsVb = shared.kws.vB; r.kwsVc = shared.kws.vC;
+    r.kwsIa = shared.kws.iA; r.kwsIb = shared.kws.iB; r.kwsIc = shared.kws.iC;
+    r.kwsPa = shared.kws.pA; r.kwsPb = shared.kws.pB; r.kwsPc = shared.kws.pC;
     xSemaphoreGive(sharedMtx);
   }
 }
@@ -439,7 +572,9 @@ void buildRecord(TelemetryRecord& r) {
 // timestamp is included as ISO-8601 UTC so the backend can stamp telemetry
 // rows accurately even when records are replayed minutes/hours later.
 bool publishRecord(const TelemetryRecord& r) {
-  StaticJsonDocument<512> doc;
+  // Bumped from 512 → 1024 to fit the 9 per-phase fields in the KWS
+  // sensor's `raw` object.
+  StaticJsonDocument<1024> doc;
   doc["boardCode"] = cfg.boardCode;
   doc["firmware"]  = FIRMWARE_VERSION;
   doc["ipAddress"] = activeLocalIp().toString();
@@ -484,11 +619,16 @@ bool publishRecord(const TelemetryRecord& r) {
     JsonObject raw = kS.createNestedObject("raw");
     raw["pf"] = r.kwsPF;
     raw["frequency"] = r.kwsFreq;
+    // Per-phase breakdown (zeros for AC301L). Backend ingestion can
+    // pick these up via `raw.*` when it grows per-phase support.
+    raw["vA"] = r.kwsVa; raw["vB"] = r.kwsVb; raw["vC"] = r.kwsVc;
+    raw["iA"] = r.kwsIa; raw["iB"] = r.kwsIb; raw["iC"] = r.kwsIc;
+    raw["pA"] = r.kwsPa; raw["pB"] = r.kwsPb; raw["pC"] = r.kwsPc;
   } else {
     kS["error"] = "no_signal";
   }
 
-  char buf[512];
+  char buf[1024];
   size_t n = serializeJson(doc, buf, sizeof(buf));
   bool ok = mqtt.publish(mqttTopic, (const uint8_t*)buf, n, false);
   if (xSemaphoreTake(sharedMtx, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -685,7 +825,8 @@ void mqttTask(void* /*arg*/) {
 
 // ─── Web server ─────────────────────────────────────────────────────
 String buildStatusJson() {
-  StaticJsonDocument<896> doc;
+  // Bumped from 896 → 1536 for the 9 per-phase KWS fields.
+  StaticJsonDocument<1536> doc;
   doc["boardCode"] = cfg.boardCode;
   doc["siteCode"]  = cfg.siteCode;
   doc["firmware"]  = FIRMWARE_VERSION;
@@ -734,6 +875,10 @@ String buildStatusJson() {
     pzemJ["freq"]    = shared.pFreq;
     JsonObject kw = doc.createNestedObject("kws");
     kw["code"]        = cfg.sensorKwsCode;
+    // Diagnostic — phases (1 or 3) + slave addr so a /api/status read
+    // is enough to tell which Modbus path the board is exercising.
+    kw["phases"]      = (cfg.kwsPhases == 3) ? 3 : 1;
+    kw["slaveAddr"]   = cfg.kwsSlaveAddr;
     kw["ok"]          = shared.kws.ok;
     kw["voltage"]     = shared.kws.voltage;
     kw["current"]     = shared.kws.current;
@@ -742,6 +887,10 @@ String buildStatusJson() {
     kw["temperature"] = shared.kws.temperature;
     kw["pf"]          = shared.kws.pf;
     kw["freq"]        = shared.kws.frequency;
+    // Per-phase breakdown (zeros for AC301L).
+    kw["vA"] = shared.kws.vA; kw["vB"] = shared.kws.vB; kw["vC"] = shared.kws.vC;
+    kw["iA"] = shared.kws.iA; kw["iB"] = shared.kws.iB; kw["iC"] = shared.kws.iC;
+    kw["pA"] = shared.kws.pA; kw["pB"] = shared.kws.pB; kw["pC"] = shared.kws.pC;
     xSemaphoreGive(sharedMtx);
   }
   String out;

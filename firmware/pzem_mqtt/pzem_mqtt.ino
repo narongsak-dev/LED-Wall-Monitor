@@ -49,7 +49,7 @@ struct KwsReading {
 
 // Firmware version is the only truly static "config" — everything else lives
 // in NVS so it can be edited from the AP-mode setup portal.
-const char* FIRMWARE_VERSION  = "v0.13.17";
+const char* FIRMWARE_VERSION  = "v0.13.18";
 
 const uint32_t PUBLISH_INTERVAL_MS = 3000;
 const uint32_t WDT_TIMEOUT_S       = 30;
@@ -888,7 +888,10 @@ String buildStatusJson() {
     // board is exercising and how the UI is rendering it.
     bool isAc306 = (cfg.kwsModel == 1) || (cfg.kwsModel == 0 && cfg.kwsPhases == 3);
     kw["model"]       = isAc306 ? "AC306L" : "AC301L";
-    kw["phases"]      = (cfg.kwsPhases == 3) ? 3 : 1;
+    // Phases is derived from model (1:1) — the operator no longer
+    // sets it independently. Surfaced for backward compat: the
+    // central dashboard's per-phase grid keys off this field.
+    kw["phases"]      = isAc306 ? 3 : 1;
     kw["slaveAddr"]   = cfg.kwsSlaveAddr;
     kw["ok"]          = shared.kws.ok;
     kw["voltage"]     = shared.kws.voltage;

@@ -189,22 +189,14 @@ button.ghost:hover{background:#2a3850}
       <div class="row">
         <div><label>KWS model</label>
           <select name="kwsModel">
-            <option value="0" %KWS_M_301_SEL%>KWS-AC301L (1-phase meter)</option>
-            <option value="1" %KWS_M_306_SEL%>KWS-AC306L (3-phase meter)</option>
-          </select>
-        </div>
-        <div><label>KWS display</label>
-          <select name="kwsPhases">
-            <option value="1" %KWS_1P_SEL%>Single (aggregate only)</option>
-            <option value="3" %KWS_3P_SEL%>Three (per-phase grid)</option>
+            <option value="0" %KWS_M_301_SEL%>KWS-AC301L (1-phase)</option>
+            <option value="1" %KWS_M_306_SEL%>KWS-AC306L (3-phase)</option>
           </select>
         </div>
       </div>
       <div class="hint" style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.5">
-        Pick the meter <strong>model</strong> by what's physically wired.
-        Display picks how the dashboard renders that reading — a 3-phase
-        meter can still show as single combined if you don't care about
-        per-phase breakdown.
+        Pick the meter <strong>model</strong> by what's physically wired —
+        the dashboard renders a 1-phase or 3-phase layout automatically.
       </div>
     </div>
     <div class="section"><h2>WiFi &amp; Network</h2>
@@ -464,17 +456,10 @@ String renderConfigForm(const char* saveUrl, const char* rebootUrl, const char* 
   html.replace("%PZEM_CODE%",      htmlEscape(cfg.sensorPzemCode));
   html.replace("%KWS_CODE%",       htmlEscape(cfg.sensorKwsCode));
   html.replace("%KWS_SLAVE%",      String(cfg.kwsSlaveAddr));
-  // kwsPhases defaults to 1 if NVS held an older blob without the field
-  // (a fresh zero-init), so the 1-phase option is the implicit fallback.
-  bool kws3 = (cfg.kwsPhases == 3);
-  html.replace("%KWS_1P_SEL%",     kws3 ? "" : "selected");
-  html.replace("%KWS_3P_SEL%",     kws3 ? "selected" : "");
-  // kwsModel — same zero-init story. 0 = AC301L (default), 1 = AC306L.
-  // We also auto-promote to AC306L when a legacy config has
-  // kwsPhases=3 but kwsModel still zero (the meaning of kwsPhases
-  // used to be "model selector" too — preserve that meaning on
-  // upgrade).
-  bool isAc306 = (cfg.kwsModel == 1) || (cfg.kwsModel == 0 && kws3);
+  // kwsModel — 0 = AC301L (default), 1 = AC306L. Auto-promote to
+  // AC306L if a legacy config has kwsPhases=3 but kwsModel still
+  // zero (kwsPhases used to be the only signal).
+  bool isAc306 = (cfg.kwsModel == 1) || (cfg.kwsModel == 0 && cfg.kwsPhases == 3);
   html.replace("%KWS_M_301_SEL%",  isAc306 ? "" : "selected");
   html.replace("%KWS_M_306_SEL%",  isAc306 ? "selected" : "");
   bool isStatic = strcmp(cfg.ipMode, "static") == 0;
@@ -540,13 +525,18 @@ bool applyConfigFromJson(const char* json, String& err) {
   copyField(doc, "sensorPzemCode", cfg.sensorPzemCode, sizeof(cfg.sensorPzemCode));
   copyField(doc, "sensorKwsCode",  cfg.sensorKwsCode,  sizeof(cfg.sensorKwsCode));
   if (doc.containsKey("kwsSlaveAddr")) cfg.kwsSlaveAddr = doc["kwsSlaveAddr"].as<uint8_t>();
-  if (doc.containsKey("kwsPhases")) {
-    uint8_t p = doc["kwsPhases"].as<uint8_t>();
-    cfg.kwsPhases = (p == 3) ? 3 : 1;       // only 1 or 3 are valid
-  }
   if (doc.containsKey("kwsModel")) {
     uint8_t m = doc["kwsModel"].as<uint8_t>();
     cfg.kwsModel = (m == 1) ? 1 : 0;        // 0 = AC301L, 1 = AC306L
+    // Phases follows model 1:1 — the portal stopped exposing them as
+    // separate dropdowns because operators found it confusing.
+    cfg.kwsPhases = (cfg.kwsModel == 1) ? 3 : 1;
+  } else if (doc.containsKey("kwsPhases")) {
+    // Legacy API caller (e.g. an older central admin tool) that still
+    // sends kwsPhases. Treat it as the source of truth for model too.
+    uint8_t p = doc["kwsPhases"].as<uint8_t>();
+    cfg.kwsPhases = (p == 3) ? 3 : 1;
+    cfg.kwsModel  = (cfg.kwsPhases == 3) ? 1 : 0;
   }
   copyField(doc, "ipMode",         cfg.ipMode,         sizeof(cfg.ipMode));
   copyField(doc, "staticIp",       cfg.staticIp,       sizeof(cfg.staticIp));

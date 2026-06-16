@@ -788,17 +788,14 @@ function PerPhaseStrip({
   sensor: { model?: string | null; phases?: 1 | 3 | null };
   raw: unknown;
 }) {
-  // Render the per-phase strip for any KWS sensor (1-phase or
-  // 3-phase). For 1-phase wiring B/C come back as zeros — that's
-  // intentional: operators want a consistent "all three phases"
-  // layout instead of having to remember which sensors are which.
-  // PZEM and unknown families don't have per-phase data so we skip.
+  // Per-phase strip only renders for KWS-AC306L 3-phase sensors —
+  // 1-phase hardware has nothing meaningful to break out. `phases`
+  // is the authoritative signal; the model-string fallback handles
+  // legacy rows that pre-date the column.
   const m = (sensor.model ?? '').toUpperCase();
-  const isKws =
-    sensor.phases === 1 ||
-    sensor.phases === 3 ||
-    (sensor.phases == null && (m.includes('KWS') || m.includes('AC301') || m.includes('AC306')));
-  if (!isKws) return null;
+  const isThreePhase = sensor.phases === 3
+    || (sensor.phases == null && (m.includes('AC306') || m.includes('3P')));
+  if (!isThreePhase) return null;
   const r = raw as Record<string, unknown> | undefined;
   if (!r) return null;
   // Skip if firmware predates per-phase fields entirely — don't render

@@ -1524,13 +1524,12 @@ function SensorRow(props: {
           </span>
         ))}
       </div>
-      {/* Per-phase breakdown for any KWS sensor (1-phase or 3-phase).
-          The row above shows aggregates; this grid lists all three
-          phases — Phase A is the active one for 1-phase wiring,
-          B/C stay at zero. Operators consistently want to see all
-          three rows so an unbalanced 3-phase load is obvious at a
-          glance, instead of "did the firmware report B/C or not?". */}
-      {(kind === 'kws-1p' || kind === 'kws-3p') && isLive && latest?.raw && (
+      {/* Per-phase breakdown — only for KWS-AC306L 3-phase. AC301L
+          1-phase hardware has no per-phase data to render; showing a
+          three-row grid with B/C always zero just confuses operators
+          (matches the firmware portal's simplification: model picks
+          1P vs 3P, no separate display knob). */}
+      {kind === 'kws-3p' && isLive && latest?.raw && (
         <PerPhaseGrid raw={latest.raw} />
       )}
     </div>

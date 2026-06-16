@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import {
@@ -458,19 +458,35 @@ export function DataReportPage() {
   const handleExportCsv = async () => {
     if (!query) return;
     const all = await fetchTelemetryReport({ ...query, page: 1, pageSize: 100_000 });
+    // Pull per-phase numbers off `raw` when present so 3-phase rows
+    // export their full per-phase breakdown alongside the aggregates.
+    // 1-phase rows leave the per-phase columns blank — spreadsheet
+    // software handles the gaps gracefully.
+    const numOrEmpty = (raw: unknown, k: string) => {
+      if (raw && typeof raw === 'object') {
+        const v = (raw as Record<string, unknown>)[k];
+        if (typeof v === 'number') return v;
+      }
+      return '';
+    };
     exportToCsv(
       all.data.map((p) => {
         const s = p.sensorId != null ? sensorById.get(p.sensorId) : undefined;
         const z = s ? zones.find((x) => x.id === (s.zoneId ?? -1)) : undefined;
         const b = s ? boards.find((x) => x.id === Number(s.boardId)) : undefined;
+        const raw = (p as { raw?: unknown }).raw;
         return {
           time: dayjs(p.time).format('YYYY-MM-DD HH:mm:ss'),
           zone: z?.code ?? '-',
           board: b?.code ?? s?.boardCode ?? '-',
           sensor: s?.code ?? '-',
           model: s?.model ?? '-',
+          phases: s?.phases ?? '',
           voltage: p.voltage, current: p.current,
           power: p.power, energy: p.energy, temperature: p.temperature,
+          vA: numOrEmpty(raw, 'vA'), vB: numOrEmpty(raw, 'vB'), vC: numOrEmpty(raw, 'vC'),
+          iA: numOrEmpty(raw, 'iA'), iB: numOrEmpty(raw, 'iB'), iC: numOrEmpty(raw, 'iC'),
+          pA: numOrEmpty(raw, 'pA'), pB: numOrEmpty(raw, 'pB'), pC: numOrEmpty(raw, 'pC'),
         };
       }),
       [
@@ -479,11 +495,21 @@ export function DataReportPage() {
         { key: 'board',       label: 'Board' },
         { key: 'sensor',      label: 'Sensor' },
         { key: 'model',       label: 'Model' },
+        { key: 'phases',      label: 'Phases' },
         { key: 'voltage',     label: 'Voltage (V)' },
         { key: 'current',     label: 'Current (A)' },
         { key: 'power',       label: 'Power (W)' },
         { key: 'energy',      label: 'Energy (kWh)' },
         { key: 'temperature', label: 'Temperature (°C)' },
+        { key: 'vA',          label: 'V Phase A' },
+        { key: 'vB',          label: 'V Phase B' },
+        { key: 'vC',          label: 'V Phase C' },
+        { key: 'iA',          label: 'I Phase A' },
+        { key: 'iB',          label: 'I Phase B' },
+        { key: 'iC',          label: 'I Phase C' },
+        { key: 'pA',          label: 'P Phase A' },
+        { key: 'pB',          label: 'P Phase B' },
+        { key: 'pC',          label: 'P Phase C' },
       ],
       `report-site${id}-${range}-${dayjs().format('YYYYMMDD-HHmmss')}.csv`,
     );
@@ -1204,6 +1230,7 @@ type TableData = {
     voltage: number | null; current: number | null;
     power: number | null; energy: number | null;
     temperature: number | null;
+    raw?: Record<string, unknown> | null;
   }>;
   total: number; totalPages: number;
 } | undefined;
@@ -1211,7 +1238,13 @@ type TableData = {
 function RawDataTable(props: {
   data: TableData;
   loading: boolean;
-  sensorById: Map<number, { code: string; model?: string | null; boardId?: number | bigint; zoneId?: number | null }>;
+  sensorById: Map<number, {
+    code: string;
+    model?: string | null;
+    boardId?: number | bigint;
+    zoneId?: number | null;
+    phases?: 1 | 3 | null;
+  }>;
   zones: Array<{ id: number; code: string }>;
   boards: Array<{ id: number; code: string }>;
   page: number; setPage: (n: number) => void;
@@ -1220,6 +1253,12 @@ function RawDataTable(props: {
   const rows = props.data?.data ?? [];
   const total = props.data?.total ?? 0;
   const totalPages = props.data?.totalPages ?? 1;
+  // Track which rows the operator has expanded. Each entry is the row's
+  // composite key (sensorId|time|idx). Only KWS-3P rows are clickable.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (key: string) => setExpanded((s) => {
+    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n;
+  });
 
   return (
     <>
@@ -1242,9 +1281,32 @@ function RawDataTable(props: {
               const zone = s ? props.zones.find((x) => x.id === (s.zoneId ?? -1)) : undefined;
               const board = s ? props.boards.find((x) => x.id === Number(s.boardId ?? 0)) : undefined;
               const kind = s ? sensorKind(s) : null;
+              const key = `${r.sensorId}-${r.time}-${idx}`;
+              // Only 3-phase rows are expandable — there's no extra
+              // detail to show for PZEM or AC301L.
+              const isExpandable = kind === 'kws-3p' && r.raw != null;
+              const isOpen = expanded.has(key);
+              const raw = r.raw as Record<string, unknown> | undefined;
+              const numFrom = (k: string) => {
+                const v = raw?.[k];
+                return typeof v === 'number' ? v : 0;
+              };
               return (
-                <tr key={`${r.sensorId}-${r.time}-${idx}`}>
-                  <td style={tdRaw}>{dayjs(r.time).format('DD/MM HH:mm:ss')}</td>
+                <Fragment key={key}>
+                <tr
+                  onClick={isExpandable ? () => toggle(key) : undefined}
+                  style={isExpandable ? { cursor: 'pointer' } : undefined}
+                >
+                  <td style={tdRaw}>
+                    {isExpandable && (
+                      <span style={{
+                        display: 'inline-block', width: 12, marginRight: 4,
+                        color: 'var(--cyan)', transform: isOpen ? 'rotate(90deg)' : 'none',
+                        transition: 'transform 0.15s',
+                      }}>›</span>
+                    )}
+                    {dayjs(r.time).format('DD/MM HH:mm:ss')}
+                  </td>
                   <td style={{ ...tdRaw, color: 'var(--dim)' }}>{zone?.code ?? '-'}</td>
                   <td style={{ ...tdRaw, color: 'var(--dim)' }}>{board?.code ?? '-'}</td>
                   <td style={tdRaw}>
@@ -1270,6 +1332,34 @@ function RawDataTable(props: {
                     {r.temperature != null ? r.temperature.toFixed(1) : '-'}
                   </td>
                 </tr>
+                {isExpandable && isOpen && (
+                  <tr key={`${key}-x`} style={{ background: 'var(--bg-input)' }}>
+                    <td colSpan={9} style={{ padding: '10px 18px', borderBottom: '1px solid var(--border-color)' }}>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'auto repeat(3, 1fr)',
+                        gap: '4px 18px',
+                        fontSize: 12,
+                        fontVariantNumeric: 'tabular-nums',
+                        maxWidth: 520,
+                      }}>
+                        <span style={{ color: 'var(--dim)', fontWeight: 600 }} />
+                        <span style={{ color: 'var(--dim)', fontWeight: 600 }}>V</span>
+                        <span style={{ color: 'var(--dim)', fontWeight: 600 }}>A</span>
+                        <span style={{ color: 'var(--dim)', fontWeight: 600 }}>W</span>
+                        {(['A','B','C'] as const).map((ph) => (
+                          <Fragment key={ph}>
+                            <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>Phase {ph}</span>
+                            <span>{numFrom(`v${ph}`).toFixed(1)}</span>
+                            <span>{numFrom(`i${ph}`).toFixed(3)}</span>
+                            <span>{numFrom(`p${ph}`).toFixed(1)}</span>
+                          </Fragment>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

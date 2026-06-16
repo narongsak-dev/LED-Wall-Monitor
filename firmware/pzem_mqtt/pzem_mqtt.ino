@@ -49,7 +49,7 @@ struct KwsReading {
 
 // Firmware version is the only truly static "config" — everything else lives
 // in NVS so it can be edited from the AP-mode setup portal.
-const char* FIRMWARE_VERSION  = "v0.13.14";
+const char* FIRMWARE_VERSION  = "v0.13.15";
 
 const uint32_t PUBLISH_INTERVAL_MS = 3000;
 const uint32_t WDT_TIMEOUT_S       = 30;
@@ -970,6 +970,16 @@ body{font-family:system-ui,Segoe UI,sans-serif;background:radial-gradient(ellips
 .tile.x .num{color:#475569;font-size:14px}
 .extra{display:flex;gap:14px;margin-top:12px;padding-top:12px;border-top:1px dashed #1e2938;font-size:11px;color:#64748b;font-variant-numeric:tabular-nums}
 .extra span strong{color:#cbd5e1;font-weight:600}
+/* Per-phase breakdown grid — shown only when sensor.phases === 3 */
+.pgrid{margin-top:12px;padding-top:12px;border-top:1px dashed #1e2938}
+.phdr{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.phdr::before{content:'';width:4px;height:12px;background:linear-gradient(180deg,#22d3ee,#3b82f6);border-radius:2px}
+.prow{display:grid;grid-template-columns:32px 1fr 1fr 1fr;gap:6px 12px;font-size:13px;font-variant-numeric:tabular-nums;color:#cbd5e1;padding:6px 0;border-bottom:1px solid rgba(30,41,56,.5)}
+.prow:last-child{border-bottom:none}
+.prow .plbl{font-weight:700;color:#22d3ee;font-size:14px}
+.prow .pcell{display:flex;align-items:baseline;gap:3px}
+.prow .pcell .pu{font-size:11px;color:#64748b;font-weight:500}
+.modepill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:999px;background:rgba(34,211,238,.12);color:#22d3ee;border:1px solid rgba(34,211,238,.35);text-transform:uppercase;margin-left:10px;vertical-align:2px}
 /* ── Footer ──────────────────────────────────────────────── */
 .foot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:18px;font-size:11px;color:#64748b}
 .live{display:inline-flex;align-items:center;gap:6px}
@@ -1086,6 +1096,13 @@ function tile(cls,label,unit,value){
 function sensorCard(s,extras){
   const ok=s&&s.ok;
   const code=s&&s.code||'—';
+  // Mode pill — shown for KWS sensors so the operator can confirm at
+  // a glance whether the board is in 1-phase or 3-phase reader mode.
+  // s.phases is published by buildStatusJson() under the kws block.
+  const phases = s && (s.phases===3 || s.phases===1) ? s.phases : null;
+  const modeHtml = phases
+    ? '<span class="modepill">'+(phases===3?'3-phase':'1-phase')+'</span>'
+    : '';
   const tiles=[
     tile('v','Voltage','V',num(s&&s.voltage,1)),
     tile('i','Current','A',num(s&&s.current,3)),
@@ -1098,13 +1115,34 @@ function sensorCard(s,extras){
   const xtr=[];
   if(s&&s.pf!=null)xtr.push('<span>PF <strong>'+num(s.pf,2)+'</strong></span>');
   if(s&&s.freq!=null)xtr.push('<span>Freq <strong>'+num(s.freq,1)+' Hz</strong></span>');
+  // Per-phase grid — only for 3-phase KWS, only when reading is live.
+  // Phase B/C show 0 when unwired which is intentional (mirrors how the
+  // central dashboard renders the same data). Skipped entirely when
+  // s.vA/iA/pA aren't published (older firmware path).
+  let phaseHtml='';
+  if(ok && phases===3 && s.vA !== undefined){
+    const pn=(v,d)=>(typeof v==='number'?v.toFixed(d):'0');
+    const prow=(lbl,v,i,p)=>
+      '<div class="prow"><span class="plbl">'+lbl+'</span>'+
+      '<span class="pcell">'+pn(v,1)+'<span class="pu">V</span></span>'+
+      '<span class="pcell">'+pn(i,3)+'<span class="pu">A</span></span>'+
+      '<span class="pcell">'+pn(p,1)+'<span class="pu">W</span></span></div>';
+    phaseHtml=
+      '<div class="pgrid">'+
+        '<div class="phdr">Per-phase</div>'+
+        prow('A',s.vA,s.iA,s.pA)+
+        prow('B',s.vB,s.iB,s.pB)+
+        prow('C',s.vC,s.iC,s.pC)+
+      '</div>';
+  }
   return '<div class="sensor'+(ok?'':' off')+'">'+
     '<div class="shead">'+
-      '<div class="scode">'+code+'</div>'+
+      '<div class="scode">'+code+modeHtml+'</div>'+
       '<span class="sstat'+(ok?'':' off')+'">'+(ok?'reading':'no signal')+'</span>'+
     '</div>'+
     '<div class="tiles'+(extras&&extras.temp!==undefined?' k5':'')+'">'+tiles.join('')+'</div>'+
     (xtr.length?'<div class="extra">'+xtr.join('')+'</div>':'')+
+    phaseHtml+
     '</div>';
 }
 

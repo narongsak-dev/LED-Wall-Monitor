@@ -49,7 +49,7 @@ struct KwsReading {
 
 // Firmware version is the only truly static "config" — everything else lives
 // in NVS so it can be edited from the AP-mode setup portal.
-const char* FIRMWARE_VERSION  = "v0.13.15";
+const char* FIRMWARE_VERSION  = "v0.13.17";
 
 const uint32_t PUBLISH_INTERVAL_MS = 3000;
 const uint32_t WDT_TIMEOUT_S       = 30;
@@ -409,10 +409,18 @@ static KwsReading readKwsAc306L() {
 }
 
 KwsReading readKws() {
-  // Branch on the explicit phase setting from config. Default to
-  // 1-phase if NVS held an older blob without the field (cfg.kwsPhases
-  // zero-inits to 0, which we treat as 1-phase too).
-  return (cfg.kwsPhases == 3) ? readKwsAc306L() : readKwsAc301L();
+  // Pick the Modbus reader based on the configured hardware model.
+  // kwsModel is what's wired up (drives register map). kwsPhases is
+  // a separate UI display preference — the operator can have a
+  // 3-phase meter but render it as a single combined reading. The
+  // reader still walks the AC306L register map either way.
+  //
+  // Legacy upgrade path: if NVS held a pre-v0.13.16 blob, kwsModel
+  // zero-inits to 0 (= AC301L). The portal preserves the old
+  // "kwsPhases=3 implied AC306L" meaning by auto-promoting on save,
+  // but until that save happens we promote here too.
+  bool useAc306 = (cfg.kwsModel == 1) || (cfg.kwsModel == 0 && cfg.kwsPhases == 3);
+  return useAc306 ? readKwsAc306L() : readKwsAc301L();
 }
 
 void connectWiFi() {
@@ -875,8 +883,11 @@ String buildStatusJson() {
     pzemJ["freq"]    = shared.pFreq;
     JsonObject kw = doc.createNestedObject("kws");
     kw["code"]        = cfg.sensorKwsCode;
-    // Diagnostic — phases (1 or 3) + slave addr so a /api/status read
-    // is enough to tell which Modbus path the board is exercising.
+    // Diagnostic — hardware model + display phases + slave addr so a
+    // single /api/status read tells you both what Modbus path the
+    // board is exercising and how the UI is rendering it.
+    bool isAc306 = (cfg.kwsModel == 1) || (cfg.kwsModel == 0 && cfg.kwsPhases == 3);
+    kw["model"]       = isAc306 ? "AC306L" : "AC301L";
     kw["phases"]      = (cfg.kwsPhases == 3) ? 3 : 1;
     kw["slaveAddr"]   = cfg.kwsSlaveAddr;
     kw["ok"]          = shared.kws.ok;
@@ -1096,12 +1107,17 @@ function tile(cls,label,unit,value){
 function sensorCard(s,extras){
   const ok=s&&s.ok;
   const code=s&&s.code||'—';
-  // Mode pill — shown for KWS sensors so the operator can confirm at
-  // a glance whether the board is in 1-phase or 3-phase reader mode.
-  // s.phases is published by buildStatusJson() under the kws block.
+  // Mode pill — shows the hardware model + display mode so the
+  // operator can confirm at a glance what the board is reading and
+  // how it's rendered. KWS only; PZEM has no per-phase concept.
   const phases = s && (s.phases===3 || s.phases===1) ? s.phases : null;
-  const modeHtml = phases
-    ? '<span class="modepill">'+(phases===3?'3-phase':'1-phase')+'</span>'
+  const model = s && s.model ? s.model : null;
+  const modeHtml = (model || phases)
+    ? '<span class="modepill">'+
+        (model ? model : '')+
+        (model && phases ? ' · ' : '')+
+        (phases ? (phases===3?'3-phase':'1-phase') : '')+
+      '</span>'
     : '';
   const tiles=[
     tile('v','Voltage','V',num(s&&s.voltage,1)),

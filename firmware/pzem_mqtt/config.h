@@ -2,9 +2,17 @@
 #include <Arduino.h>
 
 // Persisted device configuration. Stored in NVS under the "led-monitor"
-// namespace as a single binary blob. Bumping CONFIG_MAGIC will force every
-// board to factory-reset on the next boot — use only for breaking changes
-// to the struct layout.
+// namespace as a single binary blob.
+//
+// IMPORTANT layout rule: only APPEND new fields after `magic` at the end
+// of the struct. Adding fields in the middle shifts `magic`'s offset,
+// the magic-word check on the next boot fails, and every existing board
+// factory-resets its config. Trailing fields zero-init on upgrade
+// (loadConfig pads the NVS blob with zeros up to sizeof(cfg)) — exactly
+// the migration path we want.
+//
+// Bump CONFIG_MAGIC only for genuinely breaking changes that can't be
+// represented as a pure append (renamed/repurposed/shrunk fields).
 struct Config {
   // WiFi credentials (fallback transport when Ethernet is unavailable).
   char wifiSsid[33];
@@ -32,11 +40,12 @@ struct Config {
   char    sensorPzemCode[24];
   char    sensorKwsCode[24];
   uint8_t kwsSlaveAddr;
-  // Phase wiring of the KWS meter. 1 = single-phase (KWS-AC301L, the
-  // original supported model). 3 = three-phase (KWS-AC306L/306L,
-  // different register map + scale + word order). New field appended
-  // to the struct so existing NVS blobs still load — a value of 0
-  // (uninitialised) is treated as 1-phase by the reader.
+  // Phase display mode. 1 = single-phase aggregate only.
+  // 3 = aggregate + per-phase breakdown grid in the UI. Decoupled
+  // from the Modbus reader (kwsModel below) so an operator can read
+  // a 3-phase meter but only show the totals when they don't care
+  // about per-phase data. 0 (uninitialised on an old NVS blob)
+  // is treated as 1-phase.
   uint8_t kwsPhases;
 
   // Network: DHCP (default) or static IP. Static applies to whichever
@@ -59,6 +68,20 @@ struct Config {
 
   // Magic number used to detect first boot / corrupted NVS.
   uint32_t magic;
+
+  // ─── Append-only zone: fields added after the original layout ──
+  // Adding fields here keeps `magic` at the same offset for all
+  // existing NVS blobs, so loadConfig's magic check still passes
+  // and the new bytes zero-init for upgrading boards.
+
+  // Physical KWS meter model — drives which Modbus register map
+  // the reader walks. 0 = KWS-AC301L (single-phase, original
+  // protocol). 1 = KWS-AC306L / KWS-306L (three-phase, different
+  // register layout + word order + scale factors). Existing NVS
+  // blobs predate this field; loadConfig's memset zero-inits it,
+  // and the auto-promote rule treats kwsModel==0 + kwsPhases==3 as
+  // "AC306L" so v0.13.15 boards keep working without a config edit.
+  uint8_t kwsModel;
 };
 
 extern Config cfg;

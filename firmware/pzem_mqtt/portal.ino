@@ -35,6 +35,7 @@ static void applyDefaults() {
   strlcpy(cfg.sensorKwsCode,  "KWS-001",   sizeof(cfg.sensorKwsCode));
   cfg.kwsSlaveAddr = 2;
   cfg.kwsPhases    = 1;
+  cfg.kwsModel     = 0;     // 0 = AC301L, 1 = AC306L
   strlcpy(cfg.ipMode, "dhcp", sizeof(cfg.ipMode));
   cfg.staticIp[0]      = '\0';
   cfg.staticGateway[0] = '\0';
@@ -186,12 +187,24 @@ button.ghost:hover{background:#2a3850}
         <div><label>KWS sensor code</label><input name="sensorKwsCode" value="%KWS_CODE%" maxlength="23"></div>
       </div>
       <div class="row">
-        <div><label>KWS phases</label>
-          <select name="kwsPhases">
-            <option value="1" %KWS_1P_SEL%>1-phase (KWS-AC301L)</option>
-            <option value="3" %KWS_3P_SEL%>3-phase (KWS-AC306L)</option>
+        <div><label>KWS model</label>
+          <select name="kwsModel">
+            <option value="0" %KWS_M_301_SEL%>KWS-AC301L (1-phase meter)</option>
+            <option value="1" %KWS_M_306_SEL%>KWS-AC306L (3-phase meter)</option>
           </select>
         </div>
+        <div><label>KWS display</label>
+          <select name="kwsPhases">
+            <option value="1" %KWS_1P_SEL%>Single (aggregate only)</option>
+            <option value="3" %KWS_3P_SEL%>Three (per-phase grid)</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint" style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.5">
+        Pick the meter <strong>model</strong> by what's physically wired.
+        Display picks how the dashboard renders that reading — a 3-phase
+        meter can still show as single combined if you don't care about
+        per-phase breakdown.
       </div>
     </div>
     <div class="section"><h2>WiFi &amp; Network</h2>
@@ -456,6 +469,14 @@ String renderConfigForm(const char* saveUrl, const char* rebootUrl, const char* 
   bool kws3 = (cfg.kwsPhases == 3);
   html.replace("%KWS_1P_SEL%",     kws3 ? "" : "selected");
   html.replace("%KWS_3P_SEL%",     kws3 ? "selected" : "");
+  // kwsModel — same zero-init story. 0 = AC301L (default), 1 = AC306L.
+  // We also auto-promote to AC306L when a legacy config has
+  // kwsPhases=3 but kwsModel still zero (the meaning of kwsPhases
+  // used to be "model selector" too — preserve that meaning on
+  // upgrade).
+  bool isAc306 = (cfg.kwsModel == 1) || (cfg.kwsModel == 0 && kws3);
+  html.replace("%KWS_M_301_SEL%",  isAc306 ? "" : "selected");
+  html.replace("%KWS_M_306_SEL%",  isAc306 ? "selected" : "");
   bool isStatic = strcmp(cfg.ipMode, "static") == 0;
   html.replace("%DHCP_SEL%",       isStatic ? "" : "selected");
   html.replace("%STATIC_SEL%",     isStatic ? "selected" : "");
@@ -522,6 +543,10 @@ bool applyConfigFromJson(const char* json, String& err) {
   if (doc.containsKey("kwsPhases")) {
     uint8_t p = doc["kwsPhases"].as<uint8_t>();
     cfg.kwsPhases = (p == 3) ? 3 : 1;       // only 1 or 3 are valid
+  }
+  if (doc.containsKey("kwsModel")) {
+    uint8_t m = doc["kwsModel"].as<uint8_t>();
+    cfg.kwsModel = (m == 1) ? 1 : 0;        // 0 = AC301L, 1 = AC306L
   }
   copyField(doc, "ipMode",         cfg.ipMode,         sizeof(cfg.ipMode));
   copyField(doc, "staticIp",       cfg.staticIp,       sizeof(cfg.staticIp));
